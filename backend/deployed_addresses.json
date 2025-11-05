@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "message": "Deployment successful🎉",
+  "implementation": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  "proxy": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+  "mockFactory": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+  "mockRouter": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+  "sepolia": {
+    "UnrugpadToken": "0xd8069F11a034E21211Dee8d2f36788e7748ec9F1"
+  }
+}
