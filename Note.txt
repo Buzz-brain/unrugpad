@@ -1,0 +1,169 @@
+Summary / explanation of the codebase
+
+High-level purpose
+
+This repo is a small token-launching system. It provides:
+An upgradeable ERC20 token implementation with trading fees, automatic swapping and liquidity logic (UnrugpadToken).
+A (very small) UnrugpadFactory intended to deploy proxies that point to the token implementation.
+A Foundry test suite that validates fees, platform fee accumulation, swap behavior and upgradeability (UnrugpadTest.t.sol).
+A Foundry script (Deploy.s.sol) to deploy an implementation + proxy using environment variables.
+Key files & roles
+
+UnrugpadToken.sol
+
+Upgradeable ERC20 using OpenZeppelin Upgradeable base contracts (Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable).
+Features:
+Buy/sell fee struct (marketing, dev, lp). Internal constant PLATFORM_FEE = 30 (basis points) = 0.3% on all trades.
+Fee exemption mapping and pair tracking mapping.
+Automatic swap-back: when the contract token balance passes swapTokensAtAmount, it swaps tokens for ETH, distributes ETH to marketing/dev/platform wallets, and optionally adds liquidity.
+Uniswap V2 Router integration (router address supplied in initialization). During initialize it creates a pair via the router's factory.
+Admin functions: set buy/sell fees, set wallets, set fee exemptions, set pair, set swap threshold.
+UUPS upgradeable (_authorizeUpgrade guarded by onlyOwner).
+initialize(...) signature accepts many parameters: name, symbol, totalSupply, owner, marketingWallet, devWallet, platformWallet, buyFees, sellFees, routerAddress.
+Important invariants and checks:
+Validates totals of buy/sell fees <= MAX_FEE.
+Sets swap threshold to 0.1% of supply by default (swapTokensAtAmount = (_totalSupply * 10)/10000).
+receive() payable to accept ETH for swap flows.
+
+Stores implementation as an immutable instance of UnrugpadToken.
+Stores feeCollector (constructor param).
+Has a deployToken(string name, string symbol, uint256 supply) that creates an ERC1967Proxy with encoded call:
+abi.encodeWithSelector(UnrugpadToken.initialize.selector, name, symbol, supply, msg.sender, feeCollector)
+Important: This factory code encodes only five parameters into initialize, but the token initialize requires many more parameters (wallet addresses, fees, router address). That creates a mismatch (see "Important issue" below).
+UnrugpadTest.t.sol
+
+Uses forge-std/Test.sol and mocks for Uniswap Router & Factory.
+Deploys a UnrugpadToken implementation and an ERC1967Proxy initialized with full parameters (matching the token initialize signature).
+Tests cover initialization, fee calculations, transfers with/without fees, buy/sell flows, platform fee accumulation, swapBack behavior and upgrade flows.
+Deploy.s.sol
+
+Foundry script for deploying an implementation and a proxy. The script prepares full initialization data (matching UnrugpadToken.initialize) and deploys ERC1967Proxy.
+Uses env vars for private key and wallets and a constant Sepolia router address; offers a variant for custom params via env vars.
+
+Important issue / bug (critical for frontend integration)
+
+The UnrugpadFactory.deployToken(...) encodes only 5 arguments for UnrugpadToken.initialize (name, symbol, supply, msg.sender, feeCollector), but the UnrugpadToken.initialize function in the token code expects many more parameters (including marketingWallet, devWallet, platformWallet, buyFees, sellFees, routerAddress).
+Consequence: calling the current deployToken will not properly initialize the token proxy (the calldata won't match the initializer signature) — this will either revert or leave the proxy uninitialized (dangerous), depending on how the proxy handles it.
+Action required: either
+Update UnrugpadFactory so deployToken accepts and forwards the full initializer parameter set (wallets, fees, router), or
+Provide a separate factory that sets sensible defaults or collects these fields from the frontend, or
+Use the Foundry deploy script approach (server-side) to deploy proxies with correct init data (requires a backend that holds a private key).
+Security and UX notes
+
+The token is upgradeable (UUPS) and owner-controlled. Frontend should make owners aware of upgrade powers; optionally incorporate a step to renounce ownership after deployment if desired.
+The token uses isFeeExempt mapping; ensure created tokens set the correct fee exemptions (owner, wallets, contract).
+swapBack can move tokens/ETH — tests use mock router. On mainnet, gas and slippage considerations apply.
+The platform fee (0.3%) is hard-coded to PLATFORM_FEE = 30 (basis points). The platform (Unrugpad) wallet is separate and receives ETH when swaps happen. Ensure the frontend surface clearly shows platform fee.
+
+Frontend integration plan (how your UI maps to contract calls)
+
+Two deployment approaches:
+
+Frontend direct deployment via Factory contract (recommended UX if Factory is fixed):
+User connects wallet (Metamask).
+Frontend collects fields (see mapping below).
+Frontend constructs and sends a tx to UnrugpadFactory.deployToken(...) (if factory is updated to accept all required args). No server key needed.
+Backend-assisted deployment (using Foundry script or server):
+Frontend submits a signed request or form to your backend.
+Backend (holding deployer key) runs a deploy script (or sends tx) to deploy implementation + proxy with proper init data.
+Backend returns deployed addresses to frontend. This is more centralized but lets you collect a deployment fee or perform verification/whitelisting.
+Required frontend fields and mapping to UnrugpadToken.initialize:
+
+Token Name -> _name (string)
+Token Symbol -> _symbol (string)
+Total Supply -> _totalSupply (uint256; typically normalized to token decimals)
+Owner -> _owner (address) — usually the user's connected wallet
+Marketing wallet -> _marketingWallet (address)
+Dev wallet -> _devWallet (address)
+Platform wallet -> _platformWallet (address) (Unrugpad fee recipient)
+Buy fees -> _buyFees (struct: marketing, dev, lp) each in basis points (e.g., 100 = 1%)
+Sell fees -> _sellFees (same format)
+Router address -> _routerAddress (address of Uniswap/PancakeSwap Router for the chosen network)
+UI validations:
+
+Ensure each fee is 0 - 1500 (up to your MAX_FEE 3000 means total buy or sell up to 30%), but the tests set smaller values. The contract enforces MAX_FEE per buy/sell.
+Ensure buyFee + sellFee totals with PLATFORM_FEE remain within expected limits for UX display (the contract only enforces per-side <= MAX_FEE).
+Validate wallet addresses non-zero and checksum if possible.
+Convert percent inputs to basis points (e.g., 1% -> 100).
+For totalsupply UI, clarify decimal handling (the contract uses token decimals via ERC20Upgradeable default of 18 — frontend should multiply by 10**18).
+Example ethers.js flow (frontend -> Factory proxy deployment) — high level
+
+Load Factory ABI + address.
+Call factory.deployToken(name, symbol, totalSupply, marketing, dev, platform, buyFeesStruct, sellFeesStruct, router) — after Factory is updated to accept these args.
+Wait for tx confirmation, read TokenDeployed event or returned address.
+If you prefer minimal server-side flow: use Deploy.s.sol logic and run a Foundry script from your server to deploy proxies with the full init data, then show addresses to the user.
+
+Concrete next steps I recommend (pick which you'd like me to take)
+
+Fix the Factory to supply the full initializer arguments (I can implement and test this). Then I can:
+Update UnrugpadFactory.deployToken(...) signature to accept all required parameters (wallets, buy/sell fee struct, router address) and encode them into the proxy initializer.
+Add a small Foundry test showing factory deployment initializes tokens correctly.
+OR implement frontend that uses the existing Foundry/script approach (this requires a backend with a private key). I can scaffold the frontend and backend endpoints.
+Scrape https://www.welaunchit.org for content and assets to mirror the UI text and flow (you already pasted key copy — I can extract additional sections, images and CSS if you want).
+Questions for you
+
+Do you want me to update/fix UnrugpadFactory so the frontend can deploy tokens directly? If yes I will:
+Change its deployToken signature to accept all fields (and optionally make some optional with defaults).
+Add a unit test that deploys via factory and verifies initialization.
+Or do you prefer a backend-based deploy flow (server runs the Foundry script)? If so, do you want me to scaffold that server endpoint?
+Do you want me to scrape the provided site now and map the UI exactly, or is the pasted text enough?
+If you'd like, I can start by:
+
+Option A (recommended): Implementing a corrected UnrugpadFactory and tests so the frontend can call the factory directly. This is the cleanest frontend UX.
+Option B: Scaffolding a React + ethers.js minimal frontend (with a "Create token" form mapping the fields above), and show the exact contract calls. I can wire it to either Factory or a backend endpoint.
+Tell me which option you prefer (fix factory + frontend, or backend deploy + frontend), and whether to scrape the reference site now. I can proceed and make the code changes and tests in this repo immediately.
+
+
+
+
+
+
+
+
+
+
+Here’s a clear summary of what you’ve done and what’s left to get your Unrugpad token deployer fully working and ready for real use.
+
+What you’ve already done:
+
+Cloned and explored the Unrugpad repo.
+Removed the old factory contract (UnrugpadFactory.sol) as advised.
+Analyzed the codebase and confirmed UnrugpadToken.sol is the main contract.
+Set up a backend Express server (in server/) with a simple frontend form.
+Switched the backend to use ethers.js and solc-js for contract compilation and deployment (no Foundry required).
+Installed all Node dependencies and started the server successfully.
+Viewed the deployment form in your browser.
+What’s left to do (step-by-step checklist):
+
+Configure your environment for deployment:
+
+Make sure you have a valid PRIVATE_KEY (with ETH for gas) and RPC_URL (for a testnet or local node) set in your environment.
+Decide if you want to test on a public testnet (e.g., Sepolia) or locally (Anvil/Hardhat/Ganache).
+Fill out the deployment form:
+
+Enter token details (name, symbol, total supply, wallet addresses, fees, router address).
+For testing, you can use your own address for all wallet fields and a known router address for the network.
+Deploy a token:
+
+Click “Deploy” on the form.
+Wait for the server to compile, deploy, and return the implementation and proxy addresses.
+Verify the deployment:
+
+Use the returned proxy address to check the token on a block explorer (Etherscan for testnet) or with a small Node script.
+Confirm the token name, symbol, and other details.
+(Optional but recommended) Add local test mode:
+
+If you want to test without spending real ETH, I can add a local mode that deploys a mock router and uses a local node.
+(Optional) Improve the frontend:
+
+Add better result display, verification, and error messages.
+Scaffold a React frontend for a more user-friendly experience.
+(Optional) Add security and production features:
+Add authentication, rate limiting, and persistent storage for deployments.
+Secure your PRIVATE_KEY and server.
+What you should do next:
+
+Decide if you want to test on a public testnet or locally.
+Set your PRIVATE_KEY and RPC_URL.
+Fill out the form and deploy a token.
+Let me know if you want a local test mode or more frontend features.

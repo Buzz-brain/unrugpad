@@ -1,0 +1,28 @@
+1. Start Your Local Hardhat Node
+In a terminal, run:
+
+This will start a local Ethereum node on http://127.0.0.1:8545.
+
+2. Connect MetaMask to Localhost 8545
+Open MetaMask.
+Click the network dropdown at the top.
+Click “Add network” or “Show test networks” and select “Localhost 8545”.
+If it’s not there, add a new network:
+Network Name: Localhost 8545
+New RPC URL: http://127.0.0.1:8545
+Chain ID: 31337 (Hardhat’s default)
+Currency Symbol: ETH
+
+3. Import a Hardhat Account into MetaMask
+When you start npx hardhat node, it prints a list of accounts and private keys.
+Copy one private key (not the 0x... address, but the private key).
+In MetaMask, click your account icon > Import Account > paste the private key.
+
+4. Restart Your Frontend
+After updating .env, restart your React dev server:
+or
+
+5. Try Connecting Wallet Again
+Go to your frontend in the browser.
+Click “Connect Wallet”.
+Approve the connection in MetaMask.
