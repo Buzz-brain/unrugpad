@@ -3,9 +3,11 @@ import { Wallet, Zap } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useWeb3 } from '../contexts/Web3Context';
 import Button from './Button';
-
+import { useState } from 'react';
 const Navbar = () => {
-  const { account, balance, isConnecting, connectWallet, disconnectWallet, isConnected } = useWeb3();
+  const { account, balance, isConnecting, connectWallet, disconnectWallet, isConnected, connectors } = useWeb3();
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const hasInjected = typeof window !== 'undefined' && window.ethereum;
   const location = useLocation();
 
   const navItems = [
@@ -17,6 +19,14 @@ const Navbar = () => {
 
   const formatAddress = (address) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const handleConnect = () => {
+    if (hasInjected) {
+      connectWallet();
+    } else {
+      setShowWalletModal(true);
+    }
   };
 
   return (
@@ -84,15 +94,44 @@ const Navbar = () => {
                 </motion.button>
               </div>
             ) : (
-              <Button
-                onClick={connectWallet}
-                loading={isConnecting}
-                size="sm"
-                className="gap-2"
-              >
-                <Wallet size={18} />
-                Connect Wallet
-              </Button>
+              <>
+                <Button
+                  onClick={handleConnect}
+                  loading={isConnecting}
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Wallet size={18} />
+                  Connect Wallet
+                </Button>
+                {showWalletModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+                    <div className="bg-gray-900 rounded-xl p-6 shadow-xl flex flex-col items-center gap-4">
+                      <span className="text-lg font-semibold text-white mb-2">No wallet detected</span>
+                      <span className="text-sm text-gray-300 mb-4">Install MetaMask or use WalletConnect to connect a wallet.</span>
+                      <Button
+                        onClick={() => {
+                          // WalletConnect connector is always second in connectors array
+                          connectWallet({ connector: connectors[1] });
+                          setShowWalletModal(false);
+                        }}
+                        size="sm"
+                        className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Wallet size={18} />
+                        Connect with WalletConnect
+                      </Button>
+                      <Button
+                        onClick={() => setShowWalletModal(false)}
+                        size="sm"
+                        className="gap-2 bg-gray-700 hover:bg-gray-800 text-white"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { BrowserProvider } from 'ethers';
+import { createContext, useContext } from 'react';
+import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
+import { useChainId } from 'wagmi';
 
 const Web3Context = createContext();
 
@@ -12,80 +13,23 @@ export const useWeb3 = () => {
 };
 
 export const Web3Provider = ({ children }) => {
-  const [account, setAccount] = useState(null);
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [chainId, setChainId] = useState(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [balance, setBalance] = useState('0');
-
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      alert('Please install MetaMask to use this dApp');
-      return;
-    }
-
-    try {
-      setIsConnecting(true);
-      const browserProvider = new BrowserProvider(window.ethereum);
-      const accounts = await browserProvider.send('eth_requestAccounts', []);
-      const network = await browserProvider.getNetwork();
-      const signer = await browserProvider.getSigner();
-      const balance = await browserProvider.getBalance(accounts[0]);
-
-      setProvider(browserProvider);
-      setSigner(signer);
-      setAccount(accounts[0]);
-      setChainId(Number(network.chainId));
-      setBalance((Number(balance) / 1e18).toFixed(4));
-    } catch (error) {
-      console.error('Failed to connect wallet:', error);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const disconnectWallet = () => {
-    setAccount(null);
-    setProvider(null);
-    setSigner(null);
-    setChainId(null);
-    setBalance('0');
-  };
-
-  useEffect(() => {
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length === 0) {
-          disconnectWallet();
-        } else {
-          setAccount(accounts[0]);
-        }
-      });
-
-      window.ethereum.on('chainChanged', () => {
-        window.location.reload();
-      });
-    }
-
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeAllListeners('accountsChanged');
-        window.ethereum.removeAllListeners('chainChanged');
-      }
-    };
-  }, []);
+  const { address, isConnected } = useAccount();
+  const { connect, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { data: balanceData } = useBalance({ address });
+  const chainId = useChainId();
 
   const value = {
-    account,
-    provider,
-    signer,
+    account: address,
+    isConnected,
+    connectWallet: (opts) => connect(opts ? { connector: opts.connector } : { connector: connectors[0] }),
+    disconnectWallet: disconnect,
+    connectors,
     chainId,
-    balance,
-    isConnecting,
-    connectWallet,
-    disconnectWallet,
-    isConnected: !!account,
+    balance: balanceData ? balanceData.formatted : "0",
+    isConnecting: isPending,
+    provider: null,
+    signer: null,
   };
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;
