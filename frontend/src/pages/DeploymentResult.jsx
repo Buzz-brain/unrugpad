@@ -67,7 +67,7 @@ const DeploymentResult = () => {
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
             className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full mb-6 shadow-lg shadow-green-500/50"
           >
             <CheckCircle size={48} className="text-white" />
@@ -87,22 +87,40 @@ const DeploymentResult = () => {
               Token Details
             </h2>
             <div>
-              <InfoRow label="Token Name" value={form?.name || 'N/A'} />
-              <InfoRow label="Symbol" value={form?.symbol || 'N/A'} />
-              <InfoRow label="Total Supply" value={form?.totalSupply || 'N/A'} />
-              <InfoRow label="Implementation Address" value={deployment.implementation || 'N/A'} copyable />
-              <InfoRow label="Proxy Address" value={deployment.proxy || 'N/A'} copyable />
+              <InfoRow label="Token Name" value={form?.name || "N/A"} />
+              <InfoRow label="Symbol" value={form?.symbol || "N/A"} />
+              <InfoRow
+                label="Total Supply"
+                value={form?.totalSupply || "N/A"}
+              />
+              {deployment?.address && (
+                <InfoRow
+                  label="Contract Address"
+                  value={deployment.address}
+                  copyable
+                />
+              )}
             </div>
           </Card>
 
           <Card glow>
-            <h2 className="text-xl font-bold text-white mb-4">Fee Configuration</h2>
+            <h2 className="text-xl font-bold text-white mb-4">
+              Fee Configuration
+            </h2>
             <div>
               <InfoRow label="Buy Fee" value={`${form?.buyFee || 0}%`} />
               <InfoRow label="Sell Fee" value={`${form?.sellFee || 0}%`} />
-              <InfoRow label="Owner" value={form?.ownerAddress || 'N/A'} copyable />
+              <InfoRow
+                label="Owner"
+                value={form?.ownerAddress || "N/A"}
+                copyable
+              />
               {form?.marketingWallet && (
-                <InfoRow label="Marketing Wallet" value={form.marketingWallet} copyable />
+                <InfoRow
+                  label="Marketing Wallet"
+                  value={form.marketingWallet}
+                  copyable
+                />
               )}
               {form?.devWallet && (
                 <InfoRow label="Dev Wallet" value={form.devWallet} copyable />
@@ -114,7 +132,9 @@ const DeploymentResult = () => {
         <Card className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border-cyan-500/30">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h3 className="text-xl font-bold text-white mb-2">What's Next?</h3>
+              <h3 className="text-xl font-bold text-white mb-2">
+                What's Next?
+              </h3>
               <p className="text-gray-400">
                 Manage your token, add liquidity, or view analytics
               </p>
@@ -122,12 +142,18 @@ const DeploymentResult = () => {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => window.open(`https://etherscan.io/address/${deployment.proxy}`, '_blank')}
+                // onClick={() => window.open(`https://etherscan.io/address/${deployment.address}`, '_blank')}
+                onClick={() =>
+                  window.open(
+                    `https://sepolia.etherscan.io/address/${deployment.address}`,
+                    "_blank"
+                  )
+                }
               >
                 <ExternalLink size={18} />
                 View on Explorer
               </Button>
-              <Button onClick={() => navigate('/dashboard')}>
+              <Button onClick={() => navigate("/dashboard")}>
                 Go to Dashboard
               </Button>
             </div>

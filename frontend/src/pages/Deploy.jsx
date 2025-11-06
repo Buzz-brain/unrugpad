@@ -6,7 +6,8 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
 import { useWeb3 } from '../contexts/Web3Context';
-import { deployToken } from '../utils/api';
+import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
+import { BrowserProvider, ContractFactory, parseUnits } from 'ethers';
 
 const Deploy = () => {
   const navigate = useNavigate();
@@ -63,26 +64,32 @@ const Deploy = () => {
 
     try {
       setIsDeploying(true);
-      // Map frontend fields to backend's expected payload
-      const payload = {
-        OWNER: formData.ownerAddress,
-        MARKETING_WALLET: formData.marketingWallet,
-        DEV_WALLET: formData.devWallet,
-        PLATFORM_WALLET: formData.platformWallet,
-        TOKEN_NAME: formData.name,
-        TOKEN_SYMBOL: formData.symbol,
-        TOTAL_SUPPLY: formData.totalSupply,
-        // For simplicity, use buyFee/sellFee as marketing fee, others as 0
-        BUY_MARKETING: formData.buyFee,
-        BUY_DEV: 0,
-        BUY_LP: 0,
-        SELL_MARKETING: formData.sellFee,
-        SELL_DEV: 0,
-        SELL_LP: 0,
-      };
-        const result = await deployToken(payload);
-      toast.success('Token deployed successfully!');
-        navigate('/result', { state: { deployment: result, formData } });
+      // Prepare contract deployment using MetaMask
+      if (typeof window.ethereum === 'undefined') {
+        toast.error('MetaMask is not available');
+        return;
+      }
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      // Prepare constructor args (update as needed for your contract)
+      // If your contract has no constructor args, pass []
+      const constructorArgs = [];
+      // If your contract expects args, build them from formData here
+      // Example: [formData.name, formData.symbol, ...]
+      // If you need to pass supply as uint256, use parseUnits(formData.totalSupply, 18)
+      // const constructorArgs = [formData.name, formData.symbol, parseUnits(formData.totalSupply, 18), ...];
+
+      const factory = new ContractFactory(UnrugpadTokenABI.abi, UnrugpadTokenABI.bytecode, signer);
+      let contract;
+      try {
+        contract = await factory.deploy(...constructorArgs);
+        await contract.waitForDeployment();
+        toast.success('Token deployed successfully!');
+        navigate('/result', { state: { deployment: { address: contract.target, txHash: contract.deploymentTransaction().hash }, formData } });
+      } catch (err) {
+        console.error('Deployment error:', err);
+        toast.error(err?.message || 'Failed to deploy token');
+      }
     } catch (error) {
       console.error('Deployment error:', error);
       // Show backend error message if available

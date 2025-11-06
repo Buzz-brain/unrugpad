@@ -25,8 +25,9 @@ const Dashboard = () => {
   const [balanceAddress, setBalanceAddress] = useState('');
 
   useEffect(() => {
-    // Always use the Sepolia address from backend/deployed_addresses.json if available
-    fetch('http://localhost:3000/deployed_addresses.json')
+  // Always use the Sepolia address from backend/deployed_addresses.json if available
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  fetch(`${apiBaseUrl}/deployed_addresses.json`)
       .then(res => res.json())
       .then(data => {
         if (data.sepolia && data.sepolia.UnrugpadToken) {

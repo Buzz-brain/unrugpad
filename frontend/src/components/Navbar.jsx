@@ -16,7 +16,7 @@ const Navbar = () => {
     { path: '/', label: 'Home' },
     { path: '/deploy', label: 'Deploy' },
     { path: '/dashboard', label: 'Dashboard' },
-    { path: '/uniswap', label: 'Uniswap' },
+    // { path: '/uniswap', label: 'Uniswap' },
   ];
 
   const formatAddress = (address) => {
