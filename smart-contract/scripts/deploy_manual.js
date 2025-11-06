@@ -8,9 +8,9 @@ dotenv.config();
 async function main() {
   console.log('Starting manual deploy script');
 
-  const rpc = process.env.ALCHEMY_API_URL || process.env.INFURA_URL;
+  const rpc = process.env.ALCHEMY_API_URL || process.env.INFURA_API_URL;
   const pkRaw = process.env.PRIVATE_KEY || '';
-  if (!rpc) throw new Error('Missing RPC URL in ALCHEMY_API_URL or INFURA_URL in .env');
+  if (!rpc) throw new Error('Missing RPC URL in ALCHEMY_API_URL or INFURA_API_URL in .env');
   if (!pkRaw) throw new Error('Missing PRIVATE_KEY in .env');
 
   const privateKey = pkRaw.startsWith('0x') ? pkRaw : '0x' + pkRaw;

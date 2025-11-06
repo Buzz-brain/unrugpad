@@ -16,7 +16,7 @@ const config: HardhatUserConfig = {
   networks: {
     sepolia: {
       type: "http",
-      url: process.env.ALCHEMY_API_URL || "",
+      url: process.env.INFURA_API_URL || "",
       accounts: process.env.PRIVATE_KEY
         ? ([process.env.PRIVATE_KEY] as string[])
         : [],
