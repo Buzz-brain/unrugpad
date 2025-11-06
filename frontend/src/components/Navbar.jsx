@@ -7,6 +7,8 @@ import { useState } from 'react';
 const Navbar = () => {
   const { account, balance, isConnecting, connectWallet, disconnectWallet, isConnected, connectors } = useWeb3();
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState('');
   const hasInjected = typeof window !== 'undefined' && window.ethereum;
   const location = useLocation();
 
@@ -110,17 +112,30 @@ const Navbar = () => {
                       <span className="text-lg font-semibold text-white mb-2">No wallet detected</span>
                       <span className="text-sm text-gray-300 mb-4">Install MetaMask or use WalletConnect to connect a wallet.</span>
                       <Button
-                        onClick={() => {
-                          // WalletConnect connector is always second in connectors array
-                          connectWallet({ connector: connectors[1] });
-                          setShowWalletModal(false);
+                        onClick={async () => {
+                          setModalError('');
+                          if (!connectors || !connectors[1]) {
+                            setModalError('WalletConnect connector not available.');
+                            return;
+                          }
+                          try {
+                            setModalLoading(true);
+                            await connectWallet({ connector: connectors[1] });
+                            setShowWalletModal(false);
+                          } catch (err) {
+                            console.error('WalletConnect connect error', err);
+                            setModalError('Could not connect via WalletConnect. Check network and try again.');
+                          } finally {
+                            setModalLoading(false);
+                          }
                         }}
                         size="sm"
                         className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
                       >
                         <Wallet size={18} />
-                        Connect with WalletConnect
+                        {modalLoading ? 'Connecting...' : 'Connect with WalletConnect'}
                       </Button>
+                      {modalError && <div className="text-sm text-red-400 mt-2">{modalError}</div>}
                       <Button
                         onClick={() => setShowWalletModal(false)}
                         size="sm"
