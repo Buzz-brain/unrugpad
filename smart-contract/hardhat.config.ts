@@ -1,3 +1,4 @@
+import "@nomicfoundation/hardhat-verify";
 import dotenv from "dotenv";
 dotenv.config();
 import type { HardhatUserConfig } from "hardhat/config";
@@ -26,9 +27,11 @@ const config: HardhatUserConfig = {
   },
 };
 
-module.exports = {
+const finalConfig = {
   ...config,
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY || "",
   },
-};
+} as HardhatUserConfig;
+
+export default finalConfig;

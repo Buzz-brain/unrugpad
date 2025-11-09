@@ -48,13 +48,15 @@ contract DeployUnrugpadToken is Script {
         UnrugpadToken.Fees memory buyFees = UnrugpadToken.Fees({
             marketing: 100,  // 1%
             dev: 100,        // 1%
-            lp: 100          // 1%
+            lp: 100,         // 1%
+            burn: 0
         });
         
         UnrugpadToken.Fees memory sellFees = UnrugpadToken.Fees({
             marketing: 200,  // 2%
             dev: 200,        // 2%
-            lp: 100          // 1%
+            lp: 100,         // 1%
+            burn: 0
         });
         
         console.log("\n=== Fee Structure ===");
@@ -127,13 +129,15 @@ contract DeployWithCustomParams is Script {
         UnrugpadToken.Fees memory buyFees = UnrugpadToken.Fees({
             marketing: 50,   // 0.5%
             dev: 50,         // 0.5%
-            lp: 50           // 0.5%
+            lp: 50,          // 0.5%
+            burn: 0
         });
         
         UnrugpadToken.Fees memory sellFees = UnrugpadToken.Fees({
             marketing: 100,  // 1%
             dev: 100,        // 1%
-            lp: 50           // 0.5%
+            lp: 50,          // 0.5%
+            burn: 0
         });
         
         bytes memory initData = abi.encodeWithSelector(

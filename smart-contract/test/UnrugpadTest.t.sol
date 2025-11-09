@@ -50,6 +50,9 @@ contract MockUniswapV2Router {
 }
 
 contract UnrugpadTokenTest is Test {
+    // Mirror events so vm.expectEmit can match them
+    event MaxTxAmountUpdated(uint256 newAmount);
+    event MaxWalletAmountUpdated(uint256 newAmount);
     UnrugpadToken public implementation;
     UnrugpadToken public token;
     
@@ -87,13 +90,15 @@ contract UnrugpadTokenTest is Test {
         UnrugpadToken.Fees memory buyFees = UnrugpadToken.Fees({
             marketing: 100,  // 1%
             dev: 100,        // 1%
-            lp: 100          // 1%
+            lp: 100,         // 1%
+            burn: 0
         });
         
         UnrugpadToken.Fees memory sellFees = UnrugpadToken.Fees({
             marketing: 200,  // 2%
             dev: 200,        // 2%
-            lp: 100          // 1%
+            lp: 100,         // 1%
+            burn: 0
         });
         
         bytes memory initData = abi.encodeWithSelector(
@@ -118,6 +123,11 @@ contract UnrugpadTokenTest is Test {
         vm.deal(address(token), 10 ether);
         vm.deal(user1, 10 ether);
         vm.deal(user2, 10 ether);
+        // Disable anti-whale limits for tests by setting to 100%
+        vm.prank(owner);
+        token.setMaxTxPercent(10000);
+        vm.prank(owner);
+        token.setMaxWalletPercent(10000);
     }
     
     function test_Initialization() public view {
@@ -285,13 +295,13 @@ contract UnrugpadTokenTest is Test {
         // Total can be up to 30.3%
         vm.startPrank(owner);
         
-        // Set max fees
-        token.setBuyFees(1000, 1000, 1000); // 30% total
-        token.setSellFees(1000, 1000, 1000); // 30% total
+    // Set max fees per-side to 15% (1500 bps) distributed across fields
+    token.setBuyFees(500, 500, 500, 0); // 15% total
+    token.setSellFees(500, 500, 500, 0); // 15% total
         
-        // Total with platform: 30% + 0.3% = 30.3%
-        assertEq(token.getTotalBuyFee(), 3030);
-        assertEq(token.getTotalSellFee(), 3030);
+    // Total with platform: 15% + 0.3% = 15.3% (we set 500+500+500 per-side)
+    assertEq(token.getTotalBuyFee(), 1530);
+    assertEq(token.getTotalSellFee(), 1530);
         
         vm.stopPrank();
     }
@@ -307,5 +317,104 @@ contract UnrugpadTokenTest is Test {
         // Verify state is preserved
         assertEq(token.totalSupply(), TOTAL_SUPPLY);
         assertEq(token.platformWallet(), platformWallet);
+    }
+
+    // --- New Tests: Burn Fee Logic ---
+    function test_BurnFeeOnBuy() public {
+        // Set buy burn fee to 10% (1000 bps)
+        vm.prank(owner);
+        token.setBuyFees(0, 0, 0, 1000);
+        address pair = token.uniswapV2Pair();
+        vm.startPrank(owner);
+        token.transfer(pair, 100_000 * 10**18);
+        vm.stopPrank();
+        // 10% burn: 1000 tokens
+        uint256 totalBefore = token.totalSupply();
+        // Simulate buy
+        vm.prank(pair);
+        token.transfer(user1, 10_000 * 10**18);
+        uint256 totalAfter = token.totalSupply();
+    uint256 burned = totalBefore - totalAfter;
+    assertApproxEqRel(burned, 1000 * 10**18, 0.01e18);
+    // tokensForBurn should be updated (accumulated)
+    assertGt(token.tokensForBurn(), 0);
+    }
+
+    function test_BurnFeeOnSell() public {
+        // Set sell burn fee to 10% (1000 bps)
+        vm.prank(owner);
+        token.setSellFees(0, 0, 0, 1000);
+        vm.startPrank(owner);
+        token.transfer(user1, 10_000 * 10**18);
+        vm.stopPrank();
+        address pair = token.uniswapV2Pair();
+        // 10% burn: 1000 tokens (we set sell burn to 10% in this test)
+        uint256 totalBefore = token.totalSupply();
+        // Simulate sell
+        vm.prank(user1);
+        token.transfer(pair, 10_000 * 10**18);
+        uint256 totalAfter = token.totalSupply();
+    uint256 burned = totalBefore - totalAfter;
+    assertApproxEqRel(burned, 1000 * 10**18, 0.01e18);
+    // tokensForBurn should be updated
+    assertGt(token.tokensForBurn(), 0);
+    }
+
+    // --- New Tests: Anti-Whale Logic ---
+    function test_MaxTxAmountEnforced() public {
+        // Set maxTxAmount to 1% of supply
+        vm.prank(owner);
+        token.setMaxTxPercent(100); // 1%
+        uint256 maxTx = token.maxTxAmount();
+        // Fund a non-exempt sender (user2) from owner (owner is exempt)
+        vm.prank(owner);
+        token.transfer(user2, maxTx + 10);
+        // Now perform transfers from non-exempt user2
+        vm.startPrank(user2);
+        // Should succeed for exactly maxTx
+        token.transfer(user1, maxTx);
+        // Should fail if exceeding
+        vm.expectRevert("Transfer exceeds max transaction amount");
+        token.transfer(user1, maxTx + 1);
+        vm.stopPrank();
+    }
+
+    function test_MaxWalletAmountEnforced() public {
+        // Set maxWalletAmount to 2% of supply
+        vm.prank(owner);
+        token.setMaxWalletPercent(200); // 2%
+        uint256 maxWallet = token.maxWalletAmount();
+        // Fund a non-exempt sender (user2)
+        vm.prank(owner);
+        token.transfer(user2, maxWallet + 10);
+        vm.startPrank(user2);
+        // Should succeed for exactly maxWallet
+        token.transfer(user1, maxWallet);
+        // Should fail if recipient would exceed max wallet
+        vm.expectRevert("Recipient exceeds max wallet amount");
+        token.transfer(user1, 1);
+        vm.stopPrank();
+    }
+
+    function test_AntiWhaleNotAppliedToExempt() public {
+        // Owner is fee exempt
+        vm.prank(owner);
+        token.setMaxTxPercent(100); // 1%
+        uint256 overLimit = token.maxTxAmount() + 1;
+        // Should not revert for fee exempt
+        vm.startPrank(owner);
+        token.transfer(platformWallet, overLimit);
+        vm.stopPrank();
+    }
+
+    function test_MaxTxAndWalletEvents() public {
+        vm.expectEmit(true, false, false, true);
+        emit MaxTxAmountUpdated((token.totalSupply() * 150) / 10000);
+        vm.prank(owner);
+        token.setMaxTxPercent(150); // 1.5%
+        vm.expectEmit(true, false, false, true);
+        emit MaxWalletAmountUpdated((token.totalSupply() * 250) / 10000);
+        vm.prank(owner);
+        token.setMaxWalletPercent(250); // 2.5%
     }
 }

@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
@@ -5,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-
+// Interface declarations must be outside the contract
 interface IUniswapV2Factory {
     function createPair(address tokenA, address tokenB) external returns (address pair);
 }
@@ -31,6 +32,14 @@ interface IUniswapV2Router02 {
 }
 
 contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
+    // Anti-whale limits
+    uint256 public maxTxAmount;
+    uint256 public maxWalletAmount;
+    uint256 public constant MIN_LIMIT_PERCENT = 50; // 0.5% (50/10000)
+    uint256 public constant MAX_LIMIT_PERCENT = 10000; // 100%
+
+    event MaxTxAmountUpdated(uint256 newAmount);
+    event MaxWalletAmountUpdated(uint256 newAmount);
     uint256 public constant MAX_FEE = 3000; // 30% max total fee
     uint256 public constant DENOMINATOR = 10000; // 100%
     uint256 public constant PLATFORM_FEE = 30; // 0.3% (30/10000)
@@ -40,6 +49,7 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
         uint256 marketing;
         uint256 dev;
         uint256 lp;
+        uint256 burn;
     }
     
     Fees public buyFees;
@@ -62,12 +72,13 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     uint256 public tokensForMarketing;
     uint256 public tokensForDev;
     uint256 public tokensForLiquidity;
+    uint256 public tokensForBurn;
     uint256 public tokensForPlatform; // Unrugpad accumulated fees
     
     bool private inSwap;
     uint256 public swapTokensAtAmount;
     
-    event FeesUpdated(string feeType, uint256 marketing, uint256 dev, uint256 lp);
+    event FeesUpdated(string feeType, uint256 marketing, uint256 dev, uint256 lp, uint256 burn);
     event WalletUpdated(string walletType, address indexed newWallet);
     event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiquidity);
     event FeeExemptUpdated(address indexed account, bool exempt);
@@ -100,45 +111,41 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
         require(_marketingWallet != address(0), "Marketing wallet cannot be zero");
         require(_devWallet != address(0), "Dev wallet cannot be zero");
         require(_platformWallet != address(0), "Platform wallet cannot be zero");
-        
-        // Validate fees
-        uint256 totalBuyFee = _buyFees.marketing + _buyFees.dev + _buyFees.lp;
-        uint256 totalSellFee = _sellFees.marketing + _sellFees.dev + _sellFees.lp;
-        require(totalBuyFee <= MAX_FEE, "Buy fees exceed maximum");
-        require(totalSellFee <= MAX_FEE, "Sell fees exceed maximum");
-        
+        uint256 totalBuyFee = _buyFees.marketing + _buyFees.dev + _buyFees.lp + _buyFees.burn;
+        uint256 totalSellFee = _sellFees.marketing + _sellFees.dev + _sellFees.lp + _sellFees.burn;
+        require(totalBuyFee <= 1500, "Total buy fees exceed 15%");
+        require(totalSellFee <= 1500, "Total sell fees exceed 15%");
+        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
         __ERC20_init(_name, _symbol);
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
-        
         // Set wallets
         marketingWallet = _marketingWallet;
         devWallet = _devWallet;
         platformWallet = _platformWallet;
-        
         // Set fees
         buyFees = _buyFees;
         sellFees = _sellFees;
-        
         // Setup Uniswap
         uniswapV2Router = IUniswapV2Router02(_routerAddress);
         uniswapV2Pair = IUniswapV2Factory(uniswapV2Router.factory()).createPair(
             address(this),
             uniswapV2Router.WETH()
         );
-        
         isPair[uniswapV2Pair] = true;
-        
         // Set fee exemptions
         isFeeExempt[_owner] = true;
         isFeeExempt[address(this)] = true;
         isFeeExempt[_marketingWallet] = true;
         isFeeExempt[_devWallet] = true;
         isFeeExempt[_platformWallet] = true;
-        
         // Set swap threshold (0.1% of supply)
         swapTokensAtAmount = (_totalSupply * 10) / 10000;
-        
+        // Set anti-whale limits (default 0.5%)
+        maxTxAmount = (_totalSupply * MIN_LIMIT_PERCENT) / DENOMINATOR;
+        maxWalletAmount = (_totalSupply * MIN_LIMIT_PERCENT) / DENOMINATOR;
+        emit MaxTxAmountUpdated(maxTxAmount);
+        emit MaxWalletAmountUpdated(maxWalletAmount);
         // Mint tokens to owner
         _mint(_owner, _totalSupply);
     }
@@ -146,6 +153,14 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
     function _update(address from, address to, uint256 amount) internal override {
+        // Anti-whale: skip for exempt addresses
+        bool skipLimits = isFeeExempt[from] || isFeeExempt[to] || from == address(0) || to == address(0);
+        if (!skipLimits) {
+            require(amount <= maxTxAmount, "Transfer exceeds max transaction amount");
+            if (!isPair[to]) { // Only check wallet limit for non-pair (not selling)
+                require(balanceOf(to) + amount <= maxWalletAmount, "Recipient exceeds max wallet amount");
+            }
+        }
         if (amount == 0) {
             super._update(from, to, 0);
             return;
@@ -177,38 +192,42 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
             takeFee = false;
         }
         
-        uint256 fees = 0;
+    uint256 fees = 0;
+    uint256 burnFee = 0;
         uint256 platformFee = 0;
         
         if (takeFee) {
             // Calculate platform fee (0.3% on all trades)
             platformFee = (amount * PLATFORM_FEE) / DENOMINATOR;
             tokensForPlatform += platformFee;
-            
             // Sell
-            if (isPair[to] && sellFees.marketing + sellFees.dev + sellFees.lp > 0) {
-                uint256 totalSellFee = sellFees.marketing + sellFees.dev + sellFees.lp;
+            if (isPair[to] && (sellFees.marketing + sellFees.dev + sellFees.lp + sellFees.burn > 0)) {
+                uint256 totalSellFee = sellFees.marketing + sellFees.dev + sellFees.lp + sellFees.burn;
                 fees = (amount * totalSellFee) / DENOMINATOR;
-                
                 tokensForMarketing += (fees * sellFees.marketing) / totalSellFee;
                 tokensForDev += (fees * sellFees.dev) / totalSellFee;
                 tokensForLiquidity += (fees * sellFees.lp) / totalSellFee;
+                burnFee = (fees * sellFees.burn) / totalSellFee;
+                tokensForBurn += burnFee;
             }
             // Buy
-            else if (isPair[from] && buyFees.marketing + buyFees.dev + buyFees.lp > 0) {
-                uint256 totalBuyFee = buyFees.marketing + buyFees.dev + buyFees.lp;
+            else if (isPair[from] && (buyFees.marketing + buyFees.dev + buyFees.lp + buyFees.burn > 0)) {
+                uint256 totalBuyFee = buyFees.marketing + buyFees.dev + buyFees.lp + buyFees.burn;
                 fees = (amount * totalBuyFee) / DENOMINATOR;
-                
                 tokensForMarketing += (fees * buyFees.marketing) / totalBuyFee;
                 tokensForDev += (fees * buyFees.dev) / totalBuyFee;
                 tokensForLiquidity += (fees * buyFees.lp) / totalBuyFee;
+                burnFee = (fees * buyFees.burn) / totalBuyFee;
+                tokensForBurn += burnFee;
             }
-            
             uint256 totalFees = fees + platformFee;
             if (totalFees > 0) {
-                super._update(from, address(this), totalFees);
+                super._update(from, address(this), totalFees - burnFee);
             }
-            
+            if (burnFee > 0) {
+                // Burn tokens from the sender (do not transfer to zero address which may be disallowed)
+                _burn(from, burnFee);
+            }
             amount -= totalFees;
         }
         
@@ -217,9 +236,10 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     
     function swapBack() private lockTheSwap {
         uint256 contractBalance = balanceOf(address(this));
-        uint256 totalTokensToSwap = tokensForMarketing + tokensForDev + tokensForLiquidity + tokensForPlatform;
+    uint256 totalTokensToSwap = tokensForMarketing + tokensForDev + tokensForLiquidity + tokensForPlatform;
         
         if (contractBalance == 0 || totalTokensToSwap == 0) {
+            tokensForBurn = 0; // reset burn tokens (should always be 0, but for safety)
             return;
         }
         
@@ -298,26 +318,28 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     }
     
     // Admin functions
-    function setBuyFees(uint256 _marketing, uint256 _dev, uint256 _lp) external onlyOwner {
-        uint256 totalFee = _marketing + _dev + _lp;
-        require(totalFee <= MAX_FEE, "Total buy fees exceed maximum");
-        
+    function setBuyFees(uint256 _marketing, uint256 _dev, uint256 _lp, uint256 _burn) external onlyOwner {
+        uint256 totalBuyFee = _marketing + _dev + _lp + _burn;
+        uint256 totalSellFee = sellFees.marketing + sellFees.dev + sellFees.lp + sellFees.burn;
+        require(totalBuyFee <= 1500, "Total buy fees exceed 15%");
+        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
         buyFees.marketing = _marketing;
         buyFees.dev = _dev;
         buyFees.lp = _lp;
-        
-        emit FeesUpdated("buy", _marketing, _dev, _lp);
+        buyFees.burn = _burn;
+        emit FeesUpdated("buy", _marketing, _dev, _lp, _burn);
     }
-    
-    function setSellFees(uint256 _marketing, uint256 _dev, uint256 _lp) external onlyOwner {
-        uint256 totalFee = _marketing + _dev + _lp;
-        require(totalFee <= MAX_FEE, "Total sell fees exceed maximum");
-        
+
+    function setSellFees(uint256 _marketing, uint256 _dev, uint256 _lp, uint256 _burn) external onlyOwner {
+        uint256 totalSellFee = _marketing + _dev + _lp + _burn;
+        uint256 totalBuyFee = buyFees.marketing + buyFees.dev + buyFees.lp + buyFees.burn;
+        require(totalSellFee <= 1500, "Total sell fees exceed 15%");
+        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
         sellFees.marketing = _marketing;
         sellFees.dev = _dev;
         sellFees.lp = _lp;
-        
-        emit FeesUpdated("sell", _marketing, _dev, _lp);
+        sellFees.burn = _burn;
+        emit FeesUpdated("sell", _marketing, _dev, _lp, _burn);
     }
     
     function setMarketingWallet(address _marketingWallet) external onlyOwner {
@@ -354,14 +376,28 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
         require(amount <= totalSupply() / 100, "Amount too high");
         swapTokensAtAmount = amount;
     }
+
+    // Admin: set max transaction amount (percent in basis points)
+    function setMaxTxPercent(uint256 percent) external onlyOwner {
+        require(percent >= MIN_LIMIT_PERCENT && percent <= MAX_LIMIT_PERCENT, "Percent out of range");
+        maxTxAmount = (totalSupply() * percent) / DENOMINATOR;
+        emit MaxTxAmountUpdated(maxTxAmount);
+    }
+
+    // Admin: set max wallet amount (percent in basis points)
+    function setMaxWalletPercent(uint256 percent) external onlyOwner {
+        require(percent >= MIN_LIMIT_PERCENT && percent <= MAX_LIMIT_PERCENT, "Percent out of range");
+        maxWalletAmount = (totalSupply() * percent) / DENOMINATOR;
+        emit MaxWalletAmountUpdated(maxWalletAmount);
+    }
     
     // View functions
     function getTotalBuyFee() external view returns (uint256) {
-        return buyFees.marketing + buyFees.dev + buyFees.lp + PLATFORM_FEE;
+        return buyFees.marketing + buyFees.dev + buyFees.lp + buyFees.burn + PLATFORM_FEE;
     }
-    
+
     function getTotalSellFee() external view returns (uint256) {
-        return sellFees.marketing + sellFees.dev + sellFees.lp + PLATFORM_FEE;
+        return sellFees.marketing + sellFees.dev + sellFees.lp + sellFees.burn + PLATFORM_FEE;
     }
     
     function getPlatformFee() external pure returns (uint256) {
