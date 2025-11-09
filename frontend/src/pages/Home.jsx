@@ -13,7 +13,7 @@ const Home = () => {
     {
       icon: <Rocket size={32} />,
       title: 'Easy Deployment',
-      description: 'Deploy upgradable ERC20 tokens in minutes with our intuitive interface',
+      description: 'Deploy upgradable BSC tokens in minutes with our intuitive interface',
     },
     {
       icon: <Shield size={32} />,
@@ -30,11 +30,11 @@ const Home = () => {
       title: 'Full Control',
       description: 'Maintain complete ownership and control of your deployed tokens',
     },
-    {
-      icon: <TrendingUp size={32} />,
-      title: 'Market Ready',
-      description: 'Instantly tradeable with built-in Uniswap integration',
-    },
+    // {
+    //   icon: <TrendingUp size={32} />,
+    //   title: 'Market Ready',
+    //   description: 'Instantly tradeable with built-in Uniswap integration',
+    // },
     {
       icon: <Code size={32} />,
       title: 'Upgradable',
@@ -69,7 +69,9 @@ const Home = () => {
             className="inline-block mb-6"
           >
             <div className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-full">
-              <span className="text-cyan-400 text-sm font-semibold">The Future of Token Launches</span>
+              <span className="text-cyan-400 text-sm font-semibold">
+                The Future of Token Launches
+              </span>
             </div>
           </motion.div>
 
@@ -78,20 +80,24 @@ const Home = () => {
               Launch Your Token
             </span>
             <br />
-            <span className="text-white">Without The Risk</span>
+            <span className="text-white">Without Coding</span>
           </h1>
 
           <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto leading-relaxed">
-            Deploy secure, upgradable ERC20 tokens in minutes. No coding required.
+            Deploy secure, upgradable BSC tokens in minutes. No coding required.
             Full transparency, complete control, zero compromises.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Button size="lg" onClick={handleGetStarted}>
               <Rocket size={20} />
-              {isConnected ? 'Deploy Now' : 'Connect & Deploy'}
+              {isConnected ? "Deploy Now" : "Connect & Deploy"}
             </Button>
-            <Button size="lg" variant="outline" onClick={() => navigate('/dashboard')}>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => navigate("/dashboard")}
+            >
               View Dashboard
             </Button>
           </div>
@@ -101,7 +107,8 @@ const Home = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.6 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20"
+          className="flex flex-wrap justify-center gap-6 mb-20"
+          // className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20
         >
           {features.map((feature, index) => (
             <motion.div
@@ -112,7 +119,9 @@ const Home = () => {
             >
               <Card glow>
                 <div className="text-cyan-400 mb-4">{feature.icon}</div>
-                <h3 className="text-xl font-bold text-white mb-2">{feature.title}</h3>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  {feature.title}
+                </h3>
                 <p className="text-gray-400">{feature.description}</p>
               </Card>
             </motion.div>
@@ -126,9 +135,12 @@ const Home = () => {
           className="text-center"
         >
           <Card className="max-w-4xl mx-auto bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border-cyan-500/30 flex flex-col items-center p-10">
-            <h2 className="text-3xl font-bold text-white mb-4">Ready to Launch?</h2>
+            <h2 className="text-3xl font-bold text-white mb-4">
+              Ready to Launch?
+            </h2>
             <p className="text-gray-300 mb-6 text-lg">
-              Join thousands of projects that trust Unrugpad for their token launches
+              Join thousands of projects that trust Unrugpad for their token
+              launches
             </p>
             <Button size="lg" onClick={handleGetStarted}>
               Get Started Now
