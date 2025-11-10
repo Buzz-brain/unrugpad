@@ -167,3 +167,48 @@ Decide if you want to test on a public testnet or locally.
 Set your PRIVATE_KEY and RPC_URL.
 Fill out the form and deploy a token.
 Let me know if you want a local test mode or more frontend features.
+
+
+
+
+
+
+
+
+
+
+To deploy using the client’s credentials, you need the following from the client:
+
+Deployer Wallet Private Key
+
+The private key of the wallet that will own and deploy the contract (not just the address).
+Make sure it is funded with enough ETH for deployment.
+RPC URL for Target Network
+
+An endpoint for the network you’re deploying to (e.g., Sepolia, mainnet).
+This can be from Infura, Alchemy, or another provider.
+Example:
+INFURA_API_URL or
+ALCHEMY_API_URL
+(Optional) Initial Wallet Addresses
+
+If the client wants specific addresses for marketing, dev, or platform wallets (otherwise, the deployer’s address will be used).
+(Optional) Initial Fee Settings
+
+If the client wants custom initial buy/sell fees (otherwise, defaults in the script will be used).
+
+How to provide:
+
+Ask the client to send these as environment variables (not in plaintext over insecure channels):
+PRIVATE_KEY
+INFURA_API_URL or ALCHEMY_API_URL
+(Optional) MARKETING_WALLET, DEV_WALLET, PLATFORM_WALLET
+(Optional) Initial fee values if they want something other than the defaults
+Example .env file:
+
+PRIVATE_KEY=0x...
+INFURA_API_URL=https://sepolia.infura.io/v3/...
+# Optional:
+# MARKETING_WALLET=0x...
+# DEV_WALLET=0x...
+# PLATFORM_WALLET=0x...

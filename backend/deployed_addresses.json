@@ -7,7 +7,7 @@
   "mockRouter": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
   "sepolia": {
     "UnrugpadToken": "0xd8069F11a034E21211Dee8d2f36788e7748ec9F1",
-    "UnrugpadToken_Implementation": "0xF50f50fA57DA5C16748Ca749b6795153d35DE8D1",
-    "UnrugpadToken_Proxy": "0x871E9956739050cC1FB008Fc03B3b4Bf21796fDf"
+    "UnrugpadToken_Implementation": "0x437E66d744f02F7Cd05cd033a832B6477876D2f4",
+    "UnrugpadToken_Proxy": "0x4574d24EEbD2c1a152b86B5CfbE9Dd2ba24e0a04"
   }
 }

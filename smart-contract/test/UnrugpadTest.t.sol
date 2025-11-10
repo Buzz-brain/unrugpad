@@ -147,11 +147,10 @@ contract UnrugpadTokenTest is Test {
     }
     
     function test_FeeStructure() public view {
-        // Buy fees: 1% + 1% + 1% + 0.3% = 3.3%
-        assertEq(token.getTotalBuyFee(), 330);
-        
-        // Sell fees: 2% + 2% + 1% + 0.3% = 5.3%
-        assertEq(token.getTotalSellFee(), 530);
+    // Buy fees: 1% + 1% + 1% + 0.3% = 3.3% (default, can be up to 30.3%)
+    assertEq(token.getTotalBuyFee(), 330);
+    // Sell fees: 2% + 2% + 1% + 0.3% = 5.3% (default, can be up to 30.3%)
+    assertEq(token.getTotalSellFee(), 530);
     }
     
     function test_TransferWithoutFees() public {
@@ -173,9 +172,9 @@ contract UnrugpadTokenTest is Test {
         vm.prank(pair);
         token.transfer(user1, 10_000 * 10**18);
         
-        // Calculate expected: 10000 - (10000 * 3.3%)
-        // Total fee: 330 basis points (3.3%)
-        uint256 expectedReceived = 10_000 * 10**18 * (10000 - 330) / 10000;
+    // Calculate expected: 10000 - (10000 * 3.3%)
+    // Total fee: 330 basis points (3.3%) (default, can be up to 3030 bps/30.3%)
+    uint256 expectedReceived = 10_000 * 10**18 * (10000 - 330) / 10000;
         uint256 actualReceived = token.balanceOf(user1);
         
         assertApproxEqRel(actualReceived, expectedReceived, 0.01e18); // 1% tolerance
@@ -196,9 +195,9 @@ contract UnrugpadTokenTest is Test {
         vm.prank(user1);
         token.transfer(pair, 10_000 * 10**18);
         
-        // Calculate expected: 10000 - (10000 * 5.3%)
-        // Total sell fee: 530 basis points (5.3%)
-        uint256 expectedReceived = 10_000 * 10**18 * (10000 - 530) / 10000;
+    // Calculate expected: 10000 - (10000 * 5.3%)
+    // Total sell fee: 530 basis points (5.3%) (default, can be up to 3030 bps/30.3%)
+    uint256 expectedReceived = 10_000 * 10**18 * (10000 - 530) / 10000;
         uint256 actualReceived = token.balanceOf(pair);
         
         assertApproxEqRel(actualReceived, expectedReceived, 0.01e18);
@@ -230,9 +229,9 @@ contract UnrugpadTokenTest is Test {
         // Platform fees should accumulate
         assertGt(token.tokensForPlatform(), 0);
         
-        // Platform fee should be 0.3% of total volume
-        // Volume = (1000 + 1000 + 1000 + 1000) * 10^18 = 4000 * 10^18
-        // Expected platform fee ≈ 4000 * 0.003 = 12 tokens
+    // Platform fee should be 0.3% of total volume (platform fee is not affected by user fee cap)
+    // Volume = (1000 + 1000 + 1000 + 1000) * 10^18 = 4000 * 10^18
+    // Expected platform fee ≈ 4000 * 0.003 = 12 tokens
         uint256 platformTokens = token.tokensForPlatform();
         assertApproxEqRel(platformTokens, 12 * 10**18, 0.1e18); // 10% tolerance
     }
@@ -291,18 +290,15 @@ contract UnrugpadTokenTest is Test {
     }
     
     function test_MaxFeesWithPlatform() public {
-        // Max user fees is 30%, platform fee is 0.3%
-        // Total can be up to 30.3%
+        // Max user fees is 30% per side, platform fee is 0.3%
+        // Total can be up to 30.3% per side, 60.6% combined
         vm.startPrank(owner);
-        
-    // Set max fees per-side to 15% (1500 bps) distributed across fields
-    token.setBuyFees(500, 500, 500, 0); // 15% total
-    token.setSellFees(500, 500, 500, 0); // 15% total
-        
-    // Total with platform: 15% + 0.3% = 15.3% (we set 500+500+500 per-side)
-    assertEq(token.getTotalBuyFee(), 1530);
-    assertEq(token.getTotalSellFee(), 1530);
-        
+        // Set max fees per-side to 30% (3000 bps) distributed across fields
+        token.setBuyFees(1000, 1000, 1000, 0); // 30% total
+        token.setSellFees(1000, 1000, 1000, 0); // 30% total
+        // Total with platform: 30% + 0.3% = 30.3% (we set 1000+1000+1000 per-side)
+        assertEq(token.getTotalBuyFee(), 3030);
+        assertEq(token.getTotalSellFee(), 3030);
         vm.stopPrank();
     }
     

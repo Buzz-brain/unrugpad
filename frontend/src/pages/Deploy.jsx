@@ -52,27 +52,25 @@ const Deploy = () => {
     if (!formData.marketingWallet.trim()) newErrors.marketingWallet = 'Marketing wallet is required';
     if (!formData.devWallet.trim()) newErrors.devWallet = 'Dev wallet is required';
 
-    // Validate individual fees (0-15%)
+    // Validate individual fees (0-30%)
     const feeFields = [
       'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
       'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee',
     ];
     feeFields.forEach((field) => {
       const val = Number(formData[field] || 0);
-      if (val < 0 || val > 15) newErrors[field] = 'Fee must be between 0-15%';
+      if (val < 0 || val > 30) newErrors[field] = 'Fee must be between 0-30%';
     });
 
-    // Validate total buy/sell fee (0-30%)
+    // Validate total buy/sell fee (≤ 30% each)
     const totalBuyFee = ['buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee']
       .map((f) => Number(formData[f] || 0)).reduce((a, b) => a + b, 0);
     const totalSellFee = ['sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee']
       .map((f) => Number(formData[f] || 0)).reduce((a, b) => a + b, 0);
-    const totalFee = totalBuyFee + totalSellFee;
-    if (totalFee < 0 || totalFee > 30) newErrors.totalFee = 'Total fee (Buy + Sell) must be between 0-30%';
-    // New: Validate total buy fee (≤ 15%)
-    if (totalBuyFee > 15) newErrors.totalBuyFee = 'Total buy fee must not exceed 15%';
-    // New: Validate total sell fee (≤ 15%)
-    if (totalSellFee > 15) newErrors.totalSellFee = 'Total sell fee must not exceed 15%';
+    if (totalBuyFee > 30) newErrors.totalBuyFee = 'Total buy fee must not exceed 30%';
+    if (totalSellFee > 30) newErrors.totalSellFee = 'Total sell fee must not exceed 30%';
+    // Combined buy + sell must not exceed 60%
+    if (totalBuyFee + totalSellFee > 60) newErrors.totalFee = 'Total fee (Buy + Sell) must not exceed 60%';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -111,13 +109,13 @@ const Deploy = () => {
       'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee'
     ].includes(field)) {
       const numVal = Number(val);
-      if (val !== '' && (numVal < 0 || numVal > 15)) {
-        newErrors[field] = 'Fee must be between 0-15%';
+      if (val !== '' && (numVal < 0 || numVal > 30)) {
+        newErrors[field] = 'Fee must be between 0-30%';
       } else {
         newErrors[field] = '';
       }
     }
-    // Total fee validation (Buy + Sell), and new: total buy/sell fee (≤ 15%)
+    // Total buy/sell fee validation (≤ 30% each)
     const buyFees = [
       'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee'
     ].map(f => Number(f === field ? val : formData[f] || 0));
@@ -126,27 +124,25 @@ const Deploy = () => {
     ].map(f => Number(f === field ? val : formData[f] || 0));
     const totalBuyFee = buyFees.reduce((a, b) => a + b, 0);
     const totalSellFee = sellFees.reduce((a, b) => a + b, 0);
-    const totalFee = totalBuyFee + totalSellFee;
     if ([
       'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
       'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee'
     ].includes(field)) {
-      if (totalFee > 30) {
-        newErrors.totalFee = 'Total fee (Buy + Sell) must not exceed 30%';
-      } else {
-        newErrors.totalFee = '';
-      }
-      // New: total buy fee (≤ 15%)
-      if (totalBuyFee > 15) {
-        newErrors.totalBuyFee = 'Total buy fee must not exceed 15%';
+      if (totalBuyFee > 30) {
+        newErrors.totalBuyFee = 'Total buy fee must not exceed 30%';
       } else {
         newErrors.totalBuyFee = '';
       }
-      // New: total sell fee (≤ 15%)
-      if (totalSellFee > 15) {
-        newErrors.totalSellFee = 'Total sell fee must not exceed 15%';
+      if (totalSellFee > 30) {
+        newErrors.totalSellFee = 'Total sell fee must not exceed 30%';
       } else {
         newErrors.totalSellFee = '';
+      }
+      // Combined buy + sell must not exceed 60%
+      if (totalBuyFee + totalSellFee > 60) {
+        newErrors.totalFee = 'Total fee (Buy + Sell) must not exceed 60%';
+      } else {
+        newErrors.totalFee = '';
       }
     }
     // Total supply validation
@@ -247,34 +243,38 @@ const Deploy = () => {
                 <div className="flex items-center gap-3">
                   <span className="w-1.5 h-8 bg-cyan-400 rounded" />
                   <div>
-                    <h2 className="text-xl font-semibold text-white">Token Details</h2>
-                    <p className="text-sm text-gray-400 mt-1">Basic token identity and supply settings.</p>
+                    <h2 className="text-xl font-semibold text-white">
+                      Token Details
+                    </h2>
+                    <p className="text-sm text-gray-400 mt-1">
+                      Basic token identity and supply settings.
+                    </p>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
-              <Input
-                label="Token Name"
-                value={formData.name}
-                onChange={(e) => handleChange("name", e.target.value)}
-                placeholder="e.g., My Awesome Token"
-                error={errors.name}
-                required
-                tooltip="The full name of your token"
-              />
+                <Input
+                  label="Token Name"
+                  value={formData.name}
+                  onChange={(e) => handleChange("name", e.target.value)}
+                  placeholder="e.g., My Awesome Token"
+                  error={errors.name}
+                  required
+                  tooltip="The full name of your token"
+                />
 
-              <Input
-                label="Token Symbol"
-                value={formData.symbol}
-                onChange={(e) =>
-                  handleChange("symbol", e.target.value.toUpperCase())
-                }
-                placeholder="e.g., MAT"
-                error={errors.symbol}
-                required
-                tooltip="The ticker symbol (3-5 characters recommended)"
-              />
-            </div>
+                <Input
+                  label="Token Symbol"
+                  value={formData.symbol}
+                  onChange={(e) =>
+                    handleChange("symbol", e.target.value.toUpperCase())
+                  }
+                  placeholder="e.g., MAT"
+                  error={errors.symbol}
+                  required
+                  tooltip="The ticker symbol (3-5 characters recommended)"
+                />
+              </div>
               <div className="mt-4">
                 <Input
                   label="Total Supply"
@@ -295,7 +295,9 @@ const Deploy = () => {
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
                 <div>
                   <h3 className="text-xl font-semibold text-white">Wallets</h3>
-                  <p className="text-sm text-gray-400">Addresses to receive fees and platform shares.</p>
+                  <p className="text-sm text-gray-400">
+                    Addresses to receive fees and platform shares.
+                  </p>
                 </div>
               </div>
 
@@ -315,233 +317,255 @@ const Deploy = () => {
               <div className="flex items-center gap-3 mb-3">
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
                 <div>
-                  <h3 className="text-xl font-semibold text-white">Fee Configuration</h3>
-                  <p className="text-sm text-gray-400">Configure buy and sell fee splits (marketing, dev, LP, burn).</p>
+                  <h3 className="text-xl font-semibold text-white">
+                    Fee Configuration
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    Configure buy and sell fee splits (marketing, dev, LP,
+                    burn).
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
-              <Input
-                label="Marketing Wallet"
-                value={formData.marketingWallet}
-                onChange={(e) =>
-                  handleChange("marketingWallet", e.target.value)
-                }
-                placeholder="0x..."
-                error={errors.marketingWallet}
-                required
-                tooltip="Address to receive marketing fees"
-              />
-              <Input
-                label="Dev Wallet"
-                value={formData.devWallet}
-                onChange={(e) => handleChange("devWallet", e.target.value)}
-                placeholder="0x..."
-                error={errors.devWallet}
-                required
-                tooltip="Address to receive development fees"
-              />
-            </div>
+                <Input
+                  label="Marketing Wallet"
+                  value={formData.marketingWallet}
+                  onChange={(e) =>
+                    handleChange("marketingWallet", e.target.value)
+                  }
+                  placeholder="0x..."
+                  error={errors.marketingWallet}
+                  required
+                  tooltip="Address to receive marketing fees"
+                />
+                <Input
+                  label="Dev Wallet"
+                  value={formData.devWallet}
+                  onChange={(e) => handleChange("devWallet", e.target.value)}
+                  placeholder="0x..."
+                  error={errors.devWallet}
+                  required
+                  tooltip="Address to receive development fees"
+                />
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">
-                  Buy Fee Configuration
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Marketing Buy Fee (%)"
-                    type="number"
-                    value={formData.buyMarketingFee}
-                    onChange={(e) =>
-                      handleChange("buyMarketingFee", e.target.value)
-                    }
-                    placeholder="0-15"
-                    error={errors.buyMarketingFee}
-                    tooltip="% of buy fee to marketing wallet"
-                  />
-                  <Input
-                    label="Dev Buy Fee (%)"
-                    type="number"
-                    value={formData.buyDevFee}
-                    onChange={(e) => handleChange("buyDevFee", e.target.value)}
-                    placeholder="0-15"
-                    error={errors.buyDevFee}
-                    tooltip="% of buy fee to dev wallet"
-                  />
-                  <Input
-                    label="LP Buy Fee (%)"
-                    type="number"
-                    value={formData.buyLpFee}
-                    onChange={(e) => handleChange("buyLpFee", e.target.value)}
-                    placeholder="0-15"
-                    error={errors.buyLpFee}
-                    tooltip="% of buy fee to liquidity pool (no wallet)"
-                  />
-                  <Input
-                    label="Burn Buy Fee (%)"
-                    type="number"
-                    value={formData.buyBurnFee}
-                    onChange={(e) => handleChange("buyBurnFee", e.target.value)}
-                    placeholder="0-15"
-                    error={errors.buyBurnFee}
-                    tooltip="% of buy fee to burning (optional)"
-                  />
-                </div>
-                <div className="mt-2 text-sm text-gray-400">
-                  Total Buy Fee:{" "}
-                  <span
-                    className={
-                      errors.totalBuyFee
-                        ? "text-red-400 font-bold"
-                        : "text-cyan-400"
-                    }
-                  >
-                    {["buyMarketingFee", "buyDevFee", "buyLpFee", "buyBurnFee"]
-                      .map((f) => Number(formData[f] || 0))
-                      .reduce((a, b) => a + b, 0)}
-                    %
-                  </span>
-                  {errors.totalBuyFee && (
-                    <span className="ml-2 text-red-400 font-semibold">
-                      ({errors.totalBuyFee})
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    Buy Fee Configuration
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="Marketing Buy Fee (%)"
+                      type="number"
+                      value={formData.buyMarketingFee}
+                      onChange={(e) =>
+                        handleChange("buyMarketingFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.buyMarketingFee}
+                      tooltip="% of buy fee to marketing wallet"
+                    />
+                    <Input
+                      label="Dev Buy Fee (%)"
+                      type="number"
+                      value={formData.buyDevFee}
+                      onChange={(e) =>
+                        handleChange("buyDevFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.buyDevFee}
+                      tooltip="% of buy fee to dev wallet"
+                    />
+                    <Input
+                      label="LP Buy Fee (%)"
+                      type="number"
+                      value={formData.buyLpFee}
+                      onChange={(e) => handleChange("buyLpFee", e.target.value)}
+                      placeholder="0-30"
+                      error={errors.buyLpFee}
+                      tooltip="% of buy fee to liquidity pool (no wallet)"
+                    />
+                    <Input
+                      label="Burn Buy Fee (%)"
+                      type="number"
+                      value={formData.buyBurnFee}
+                      onChange={(e) =>
+                        handleChange("buyBurnFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.buyBurnFee}
+                      tooltip="% of buy fee to burning (optional)"
+                    />
+                  </div>
+                  <div className="mt-2 text-sm text-gray-400">
+                    Total Buy Fee:{" "}
+                    <span
+                      className={
+                        errors.totalBuyFee
+                          ? "text-red-400 font-bold"
+                          : "text-cyan-400"
+                      }
+                    >
+                      {[
+                        "buyMarketingFee",
+                        "buyDevFee",
+                        "buyLpFee",
+                        "buyBurnFee",
+                      ]
+                        .map((f) => Number(formData[f] || 0))
+                        .reduce((a, b) => a + b, 0)}
+                      %
                     </span>
-                  )}
+                    {errors.totalBuyFee && (
+                      <span className="ml-2 text-red-400 font-semibold">
+                        ({errors.totalBuyFee})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    Sell Fee Configuration
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="Marketing Sell Fee (%)"
+                      type="number"
+                      value={formData.sellMarketingFee}
+                      onChange={(e) =>
+                        handleChange("sellMarketingFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.sellMarketingFee}
+                      tooltip="% of sell fee to marketing wallet"
+                    />
+                    <Input
+                      label="Dev Sell Fee (%)"
+                      type="number"
+                      value={formData.sellDevFee}
+                      onChange={(e) =>
+                        handleChange("sellDevFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.sellDevFee}
+                      tooltip="% of sell fee to dev wallet"
+                    />
+                    <Input
+                      label="LP Sell Fee (%)"
+                      type="number"
+                      value={formData.sellLpFee}
+                      onChange={(e) =>
+                        handleChange("sellLpFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.sellLpFee}
+                      tooltip="% of sell fee to liquidity pool (no wallet)"
+                    />
+                    <Input
+                      label="Burn Sell Fee (%)"
+                      type="number"
+                      value={formData.sellBurnFee}
+                      onChange={(e) =>
+                        handleChange("sellBurnFee", e.target.value)
+                      }
+                      placeholder="0-30"
+                      error={errors.sellBurnFee}
+                      tooltip="% of sell fee to burning (optional)"
+                    />
+                  </div>
+                  <div className="mt-2 text-sm text-gray-400">
+                    Total Sell Fee:{" "}
+                    <span
+                      className={
+                        errors.totalSellFee
+                          ? "text-red-400 font-bold"
+                          : "text-cyan-400"
+                      }
+                    >
+                      {[
+                        "sellMarketingFee",
+                        "sellDevFee",
+                        "sellLpFee",
+                        "sellBurnFee",
+                      ]
+                        .map((f) => Number(formData[f] || 0))
+                        .reduce((a, b) => a + b, 0)}
+                      %
+                    </span>
+                    {errors.totalSellFee && (
+                      <span className="ml-2 text-red-400 font-semibold">
+                        ({errors.totalSellFee})
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">
-                  Sell Fee Configuration
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Marketing Sell Fee (%)"
-                    type="number"
-                    value={formData.sellMarketingFee}
-                    onChange={(e) =>
-                      handleChange("sellMarketingFee", e.target.value)
-                    }
-                    placeholder="0-15"
-                    error={errors.sellMarketingFee}
-                    tooltip="% of sell fee to marketing wallet"
-                  />
-                  <Input
-                    label="Dev Sell Fee (%)"
-                    type="number"
-                    value={formData.sellDevFee}
-                    onChange={(e) => handleChange("sellDevFee", e.target.value)}
-                    placeholder="0-15"
-                    error={errors.sellDevFee}
-                    tooltip="% of sell fee to dev wallet"
-                  />
-                  <Input
-                    label="LP Sell Fee (%)"
-                    type="number"
-                    value={formData.sellLpFee}
-                    onChange={(e) => handleChange("sellLpFee", e.target.value)}
-                    placeholder="0-15"
-                    error={errors.sellLpFee}
-                    tooltip="% of sell fee to liquidity pool (no wallet)"
-                  />
-                  <Input
-                    label="Burn Sell Fee (%)"
-                    type="number"
-                    value={formData.sellBurnFee}
-                    onChange={(e) =>
-                      handleChange("sellBurnFee", e.target.value)
-                    }
-                    placeholder="0-15"
-                    error={errors.sellBurnFee}
-                    tooltip="% of sell fee to burning (optional)"
-                  />
-                </div>
-                <div className="mt-2 text-sm text-gray-400">
-                  Total Sell Fee:{" "}
-                  <span
-                    className={
-                      errors.totalSellFee
-                        ? "text-red-400 font-bold"
-                        : "text-cyan-400"
-                    }
-                  >
-                    {[
-                      "sellMarketingFee",
-                      "sellDevFee",
-                      "sellLpFee",
-                      "sellBurnFee",
-                    ]
-                      .map((f) => Number(formData[f] || 0))
-                      .reduce((a, b) => a + b, 0)}
-                    %
-                  </span>
-                  {errors.totalSellFee && (
-                    <span className="ml-2 text-red-400 font-semibold">
-                      ({errors.totalSellFee})
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
 
-            {/* Enhanced Total Fee Warning - spans full form below buy/sell config */}
-            <div className="w-full flex justify-center mt-6">
-              <motion.div
-                initial={{ scale: 1 }}
-                animate={
-                  errors.totalFee
-                    ? { scale: [1, 1.05, 1], x: [0, -5, 5, 0] }
-                    : { scale: 1 }
-                }
-                transition={{ duration: 0.5 }}
-                className={`rounded-lg px-4 py-3 text-base font-semibold flex items-center gap-2 shadow-md ${
-                  errors.totalFee
-                    ? "bg-red-900 text-red-200 border-2 border-red-400"
-                    : "bg-yellow-900 text-yellow-200 border border-yellow-600"
-                }`}
-                style={{ minWidth: "320px", maxWidth: "500px" }}
-              >
-                <svg
-                  className="w-5 h-5 flex-shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
+              {/* Enhanced Total Fee Warning - spans full form below buy/sell config */}
+              <div className="w-full flex justify-center mt-6">
+                <motion.div
+                  initial={{ scale: 1 }}
+                  animate={
+                    errors.totalFee
+                      ? { scale: [1, 1.05, 1], x: [0, -5, 5, 0] }
+                      : { scale: 1 }
+                  }
+                  transition={{ duration: 0.5 }}
+                  className={`rounded-lg px-4 py-3 text-base font-semibold flex items-center gap-2 shadow-md ${
+                    errors.totalFee
+                      ? "bg-red-900 text-red-200 border-2 border-red-400"
+                      : "bg-yellow-900 text-yellow-200 border border-yellow-600"
+                  }`}
+                  style={{ minWidth: "320px", maxWidth: "500px" }}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z"
-                  />
-                </svg>
-                <span>
-                  Total Fee (Buy + Sell):{" "}
-                  <span
-                    className={
-                      errors.totalFee
-                        ? "text-red-300 font-bold"
-                        : "text-yellow-300 font-bold"
-                    }
+                  <svg
+                    className="w-5 h-5 flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
                   >
-                    {[
-                      "buyMarketingFee",
-                      "buyDevFee",
-                      "buyLpFee",
-                      "buyBurnFee",
-                      "sellMarketingFee",
-                      "sellDevFee",
-                      "sellLpFee",
-                      "sellBurnFee",
-                    ]
-                      .map((f) => Number(formData[f] || 0))
-                      .reduce((a, b) => a + b, 0)}
-                    %
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z"
+                    />
+                  </svg>
+                  <span>
+                    Total Fee (Buy + Sell):{" "}
+                    <span
+                      className={
+                        errors.totalFee
+                          ? "text-red-300 font-bold"
+                          : "text-yellow-300 font-bold"
+                      }
+                    >
+                      {[
+                        "buyMarketingFee",
+                        "buyDevFee",
+                        "buyLpFee",
+                        "buyBurnFee",
+                        "sellMarketingFee",
+                        "sellDevFee",
+                        "sellLpFee",
+                        "sellBurnFee",
+                      ]
+                        .map((f) => Number(formData[f] || 0))
+                        .reduce((a, b) => a + b, 0)}%
+                      {errors.totalFee ? (
+                        <span className="text-red-400 font-bold ml-2">
+                          ({errors.totalFee})
+                        </span>
+                      ) : (
+                        <span className="text-yellow-300 font-bold ml-2">
+                          (must not exceed 60%)
+                        </span>
+                      )}
+                    </span>
                   </span>
-                  {errors.totalFee
-                    ? ` (${errors.totalFee})`
-                    : " (must not exceed 30%)"}
-                </span>
-              </motion.div>
-            </div>
-
+                </motion.div>
+              </div>
             </div>
 
             {/* === Anti-Whale Limits === */}
@@ -549,79 +573,84 @@ const Deploy = () => {
               <div className="flex items-center gap-3 mb-3">
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
                 <div>
-                  <h3 className="text-xl font-semibold text-white">Anti-Whale Limits</h3>
-                  <p className="text-sm text-gray-400">Set limits to prevent large transfers or wallet holdings.</p>
+                  <h3 className="text-xl font-semibold text-white">
+                    Anti-Whale Limits
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    Set limits to prevent large transfers or wallet holdings.
+                  </p>
                 </div>
               </div>
               {/* Max Transaction & Wallet Sliders */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-white font-semibold mb-1 flex items-center gap-1">
-                  Max Transaction Amount
-                  <Tooltip
-                    title="Maximum % of total supply allowed per transaction. Adjustable from 0.5% to 100%."
-                    placement="top"
-                    arrow
-                  >
-                    <span className="text-cyan-400 cursor-pointer">
-                      &#9432;
+                <div>
+                  <label className="block text-white font-semibold mb-1 flex items-center gap-1">
+                    Max Transaction Amount
+                    <Tooltip
+                      title="Maximum % of total supply allowed per transaction. Adjustable from 0.5% to 100%."
+                      placement="top"
+                      arrow
+                    >
+                      <span className="text-cyan-400 cursor-pointer">
+                        &#9432;
+                      </span>
+                    </Tooltip>
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <Slider
+                      min={0.5}
+                      max={100}
+                      step={0.1}
+                      value={formData.maxTxPercent}
+                      onChange={(_, v) => handleChange("maxTxPercent", v)}
+                      sx={{ color: "#06b6d4", width: 180 }}
+                    />
+                    <span className="text-cyan-300 font-bold">
+                      {formData.maxTxPercent}%
                     </span>
-                  </Tooltip>
-                </label>
-                <div className="flex items-center gap-4">
-                  <Slider
-                    min={0.5}
-                    max={100}
-                    step={0.1}
-                    value={formData.maxTxPercent}
-                    onChange={(_, v) => handleChange("maxTxPercent", v)}
-                    sx={{ color: "#06b6d4", width: 180 }}
-                  />
-                  <span className="text-cyan-300 font-bold">
-                    {formData.maxTxPercent}%
-                  </span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    = {getTokenValue(formData.maxTxPercent)} tokens
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  = {getTokenValue(formData.maxTxPercent)} tokens
+                <div>
+                  <label className="block text-white font-semibold mb-1 flex items-center gap-1">
+                    Max Wallet Amount
+                    <Tooltip
+                      title="Maximum % of total supply a wallet can hold. Adjustable from 0.5% to 100%."
+                      placement="top"
+                      arrow
+                    >
+                      <span className="text-cyan-400 cursor-pointer">
+                        &#9432;
+                      </span>
+                    </Tooltip>
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <Slider
+                      min={0.5}
+                      max={100}
+                      step={0.1}
+                      value={formData.maxWalletPercent}
+                      onChange={(_, v) => handleChange("maxWalletPercent", v)}
+                      sx={{ color: "#06b6d4", width: 180 }}
+                    />
+                    <span className="text-cyan-300 font-bold">
+                      {formData.maxWalletPercent}%
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    = {getTokenValue(formData.maxWalletPercent)} tokens
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-white font-semibold mb-1 flex items-center gap-1">
-                  Max Wallet Amount
-                  <Tooltip
-                    title="Maximum % of total supply a wallet can hold. Adjustable from 0.5% to 100%."
-                    placement="top"
-                    arrow
-                  >
-                    <span className="text-cyan-400 cursor-pointer">
-                      &#9432;
-                    </span>
-                  </Tooltip>
-                </label>
-                <div className="flex items-center gap-4">
-                  <Slider
-                    min={0.5}
-                    max={100}
-                    step={0.1}
-                    value={formData.maxWalletPercent}
-                    onChange={(_, v) => handleChange("maxWalletPercent", v)}
-                    sx={{ color: "#06b6d4", width: 180 }}
-                  />
-                  <span className="text-cyan-300 font-bold">
-                    {formData.maxWalletPercent}%
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  = {getTokenValue(formData.maxWalletPercent)} tokens
-                </div>
-              </div>
-            </div>
-
             </div>
 
             {/* Summary Panel */}
             <div className="bg-gray-800 rounded-lg p-4 mt-8 border border-cyan-900">
-              <h4 className="text-xl text-cyan-300 font-semibold mb-2">Summary</h4>
+              <h4 className="text-xl text-cyan-300 font-semibold mb-2">
+                Summary
+              </h4>
               <ul className="text-gray-300 text-sm space-y-1">
                 <li>
                   <span className="font-bold">Token Name:</span>{" "}

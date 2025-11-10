@@ -111,11 +111,10 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
         require(_marketingWallet != address(0), "Marketing wallet cannot be zero");
         require(_devWallet != address(0), "Dev wallet cannot be zero");
         require(_platformWallet != address(0), "Platform wallet cannot be zero");
-        uint256 totalBuyFee = _buyFees.marketing + _buyFees.dev + _buyFees.lp + _buyFees.burn;
-        uint256 totalSellFee = _sellFees.marketing + _sellFees.dev + _sellFees.lp + _sellFees.burn;
-        require(totalBuyFee <= 1500, "Total buy fees exceed 15%");
-        require(totalSellFee <= 1500, "Total sell fees exceed 15%");
-        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
+    uint256 totalBuyFee = _buyFees.marketing + _buyFees.dev + _buyFees.lp + _buyFees.burn;
+    uint256 totalSellFee = _sellFees.marketing + _sellFees.dev + _sellFees.lp + _sellFees.burn;
+    require(totalBuyFee <= MAX_FEE, "Total buy fees exceed 30%");
+    require(totalSellFee <= MAX_FEE, "Total sell fees exceed 30%");
         __ERC20_init(_name, _symbol);
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
@@ -319,10 +318,8 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     
     // Admin functions
     function setBuyFees(uint256 _marketing, uint256 _dev, uint256 _lp, uint256 _burn) external onlyOwner {
-        uint256 totalBuyFee = _marketing + _dev + _lp + _burn;
-        uint256 totalSellFee = sellFees.marketing + sellFees.dev + sellFees.lp + sellFees.burn;
-        require(totalBuyFee <= 1500, "Total buy fees exceed 15%");
-        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
+    uint256 totalBuyFee = _marketing + _dev + _lp + _burn;
+    require(totalBuyFee <= MAX_FEE, "Total buy fees exceed 30%");
         buyFees.marketing = _marketing;
         buyFees.dev = _dev;
         buyFees.lp = _lp;
@@ -331,10 +328,8 @@ contract UnrugpadToken is Initializable, ERC20Upgradeable, OwnableUpgradeable, U
     }
 
     function setSellFees(uint256 _marketing, uint256 _dev, uint256 _lp, uint256 _burn) external onlyOwner {
-        uint256 totalSellFee = _marketing + _dev + _lp + _burn;
-        uint256 totalBuyFee = buyFees.marketing + buyFees.dev + buyFees.lp + buyFees.burn;
-        require(totalSellFee <= 1500, "Total sell fees exceed 15%");
-        require(totalBuyFee + totalSellFee <= 3000, "Combined buy+sell fees exceed 30%");
+    uint256 totalSellFee = _marketing + _dev + _lp + _burn;
+    require(totalSellFee <= MAX_FEE, "Total sell fees exceed 30%");
         sellFees.marketing = _marketing;
         sellFees.dev = _dev;
         sellFees.lp = _lp;
