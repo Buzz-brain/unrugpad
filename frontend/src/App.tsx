@@ -3,6 +3,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { Web3Provider } from './contexts/Web3Context';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 import Home from './pages/Home';
 import Deploy from './pages/Deploy';
 import DeploymentResult from './pages/DeploymentResult';
@@ -13,7 +14,7 @@ function App() {
   return (
     <Web3Provider>
       <Router>
-        <div className="min-h-screen bg-gray-900">
+        <div className="min-h-screen bg-gray-900 pb-20">
           <Navbar />
           <Routes>
             <Route path="/" element={<Home />} />
@@ -22,6 +23,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/uniswap" element={<Uniswap />} />
           </Routes>
+          <Footer />
           <ToastContainer
             position="top-right"
             autoClose={3000}
