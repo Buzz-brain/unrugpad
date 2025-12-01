@@ -11,6 +11,7 @@ import DeploymentResult from './pages/DeploymentResult';
 import Dashboard from './pages/Dashboard';
 import Uniswap from './pages/Uniswap';
 import WalletModal from './components/WalletModal';
+import { lazy, Suspense } from 'react';
 
 function App() {
   return (
@@ -24,8 +25,16 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/deploy" element={<Deploy />} />
               <Route path="/result" element={<DeploymentResult />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/uniswap" element={<Uniswap />} />
+              <Route path="/dashboard" element={
+                <Suspense fallback={<div className="text-center text-white py-20">Loading dashboard...</div>}>
+                  <Dashboard />
+                </Suspense>
+              } />
+              <Route path="/uniswap" element={
+                <Suspense fallback={<div className="text-center text-white py-20">Loading Uniswap...</div>}>
+                  <Uniswap />
+                </Suspense>
+              } />
             </Routes>
             <Footer />
             <ToastContainer

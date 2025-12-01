@@ -1,35 +1,60 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- SEO Meta Tags -->
-    <meta name="description" content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
-    <meta name="keywords" content="Unrugpad, BSC, Binance Smart Chain, token launchpad, crypto, deploy token, upgradable token, dApp" />
-    <meta name="author" content="Unrugpad Team" />
-    <link rel="canonical" href="https://www.unrugpad.com/" />
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://www.unrugpad.com/" />
-    <meta property="og:title" content="Unrugpad | BSC Token Launchpad" />
-    <meta property="og:description" content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
-    <meta property="og:image" content="/logo.png" />
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- SEO Meta Tags -->
+  <meta name="description"
+    content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
+  <meta name="keywords"
+    content="Unrugpad, BSC, Binance Smart Chain, token launchpad, crypto, deploy token, upgradable token, dApp" />
+  <meta name="author" content="Unrugpad Team" />
+  <link rel="canonical" href="https://www.unrugpad.com/" />
 
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="https://www.unrugpad.com/" />
-    <meta name="twitter:title" content="Unrugpad | BSC Token Launchpad" />
-    <meta name="twitter:description" content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
-    <meta name="twitter:image" content="/logo.png" />
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://www.unrugpad.com/" />
+  <meta property="og:title" content="Unrugpad | BSC Token Launchpad" />
+  <meta property="og:description"
+    content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
+  <meta property="og:image" content="/logo.png" />
 
-    <!-- Manifest for PWA/SEO -->
-    <link rel="manifest" href="/manifest.json" />
-    <title>Unrugpad | BSC Token Launchpad</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://www.unrugpad.com/" />
+  <meta name="twitter:title" content="Unrugpad | BSC Token Launchpad" />
+  <meta name="twitter:description"
+    content="Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease." />
+  <meta name="twitter:image" content="/logo.png" />
+
+  <!-- Preconnect to BSC RPC for faster requests -->
+  <link rel="preconnect" href="https://bsc-dataseed.bnbchain.org" crossorigin />
+  <!-- Schema.org Structured Data -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Unrugpad",
+      "url": "https://www.unrugpad.com/",
+      "logo": "https://www.unrugpad.com/logo.png",
+      "description": "Unrugpad is a secure, user-friendly BSC token launchpad. Deploy, manage, and upgrade your tokens with ease.",
+      "sameAs": [
+        "https://twitter.com/unrugpad",
+        "https://github.com/Buzz-brain/unrugpad"
+      ]
+    }
+  </script>
+
+  <!-- Manifest for PWA/SEO -->
+  <link rel="manifest" href="/manifest.json" />
+  <title>Unrugpad | BSC Token Launchpad</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { ArrowDownUp, Plus, Minus, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -92,6 +93,11 @@ const Uniswap = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 pt-32 pb-20">
+      <h1 className="text-4xl sm:text-5xl font-bold text-center text-cyan-400 mb-8">Swap Tokens</h1>
+      <div className="flex flex-col sm:flex-row gap-2 justify-center items-center mb-8">
+        <Link to="/" className="text-cyan-400 hover:underline text-base font-medium">Back to Home</Link>
+        <Link to="/dashboard" className="text-cyan-400 hover:underline text-base font-medium">Back to Dashboard</Link>
+      </div>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

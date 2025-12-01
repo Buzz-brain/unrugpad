@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-
 import { useState, useEffect } from 'react';
 import { Coins, Send, CheckCircle, Eye } from 'lucide-react';
 import { toast } from 'react-toastify';

@@ -82,7 +82,6 @@ const Home = () => {
             <br />
             <span className="text-white">Without Coding</span>
           </h1>
-
           <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto leading-relaxed">
             Deploy secure, upgradable BSC tokens in minutes. No coding required.
             Full transparency, complete control, zero compromises.

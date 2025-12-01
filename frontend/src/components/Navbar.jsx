@@ -40,7 +40,9 @@ const Navbar = () => {
           <Link to="/" className="flex items-center gap-3 group">
             <img
               src="/logo.png"
-              alt="Company Logo"
+              alt="Unrugpad company logo"
+              role="img"
+              aria-label="Unrugpad logo"
               className="w-10 h-10 rounded-full object-contain bg-white mb-2 border-2 border-cyan-400 shadow"
             />
             <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">

@@ -17,7 +17,9 @@ const WalletModal = () => {
         {/* Company Logo */}
         <img
           src="/logo.png"
-          alt="Company Logo"
+          alt="Unrugpad company logo"
+          role="img"
+          aria-label="Unrugpad logo"
           className="w-16 h-16 rounded-full object-contain bg-white mb-2 border-2 border-cyan-400 shadow"
         />
         <h2 className="text-2xl font-bold text-white mb-1">Connect Your Wallet</h2>
