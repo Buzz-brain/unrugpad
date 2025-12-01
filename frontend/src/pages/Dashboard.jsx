@@ -11,7 +11,9 @@ import { useWeb3 } from '../contexts/Web3Context';
 import { ethers } from 'ethers';
 import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
 import UnrugpadTokenFactoryABI from '../abis/UnrugpadTokenFactory.json';
-import { getTokenInfo, interactWithToken } from '../utils/api';
+import { interactWithToken } from '../utils/api';
+// import { getTokenInfo, interactWithToken } from '../utils/api';
+import Modal from '../components/Modal';
 
 const Dashboard = () => {
   const { isConnected, account, provider, signer, chainId } = useWeb3();
