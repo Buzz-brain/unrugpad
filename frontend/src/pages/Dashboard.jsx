@@ -32,6 +32,9 @@ const Dashboard = () => {
   const [transferData, setTransferData] = useState({ to: '', amount: '' });
   const [approveData, setApproveData] = useState({ spender: '', amount: '' });
   const [balanceAddress, setBalanceAddress] = useState('');
+  // Modal state for transfer/approve/balance
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalType, setModalType] = useState('transfer');
 
   const { open: openWalletModal } = useWalletModal();
   useEffect(() => {
