@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Script} from "forge-std/Script.sol";
-import {console} from "forge-std/console.sol";
-import {UnrugpadToken} from "../src/UnrugpadToken.sol";
-import {ERC1967Proxy} from "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "forge-std/Script.sol";
+import "../src/UnrugpadToken.sol";
+import "forge-std/console.sol";
+import "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployUnrugpadToken is Script {
     // Configuration parameters
@@ -18,7 +18,7 @@ contract DeployUnrugpadToken is Script {
         address platformWallet;
         address routerAddress;
     }
-   
+    
     struct FeeConfig {
         uint256 buyMarketing;
         uint256 buyDev;
@@ -29,34 +29,34 @@ contract DeployUnrugpadToken is Script {
         uint256 additionalBuyFee;
         uint256 additionalSellFee;
     }
-   
+    
     function run() external {
         // Load private key from environment
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-       
+        
         // Get configuration from environment or use defaults
         TokenConfig memory config = getTokenConfig();
         FeeConfig memory fees = getFeeConfig();
-       
+        
         vm.startBroadcast(deployerPrivateKey);
-       
+        
         // 1. Deploy implementation contract
         UnrugpadToken implementation = new UnrugpadToken();
         console.log("Implementation deployed at:", address(implementation));
-       
+        
         // 2. Prepare initialization data
         UnrugpadToken.Fees memory buyFees = UnrugpadToken.Fees({
             marketing: fees.buyMarketing,
             dev: fees.buyDev,
             lp: fees.buyLp
         });
-       
+        
         UnrugpadToken.Fees memory sellFees = UnrugpadToken.Fees({
             marketing: fees.sellMarketing,
             dev: fees.sellDev,
             lp: fees.sellLp
         });
-       
+        
         bytes memory initData = abi.encodeWithSelector(
             UnrugpadToken.initialize.selector,
             config.name,
@@ -72,16 +72,16 @@ contract DeployUnrugpadToken is Script {
             fees.additionalSellFee,
             config.routerAddress
         );
-       
+        
         // 3. Deploy proxy
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
             initData
         );
         console.log("Proxy deployed at:", address(proxy));
-       
+        
         vm.stopBroadcast();
-       
+        
         // Log deployment information
         console.log("\n=== Deployment Summary ===");
         console.log("Token Name:", config.name);
@@ -105,7 +105,7 @@ contract DeployUnrugpadToken is Script {
         console.log("\n=== Platform Fee ===");
         console.log("Platform Fee (all trades): 30 bps (0.3%)");
     }
-   
+    
     function getTokenConfig() internal view returns (TokenConfig memory) {
         return TokenConfig({
             name: vm.envOr("TOKEN_NAME", string("Unrugpad Token")),
@@ -122,7 +122,7 @@ contract DeployUnrugpadToken is Script {
             routerAddress: vm.envOr("ROUTER_ADDRESS", address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D))
         });
     }
-   
+    
     function getFeeConfig() internal view returns (FeeConfig memory) {
         return FeeConfig({
             // Buy fees (in basis points: 100 = 1%)
@@ -130,7 +130,7 @@ contract DeployUnrugpadToken is Script {
             buyDev: vm.envOr("BUY_DEV_FEE", uint256(100)), // 1%
             buyLp: vm.envOr("BUY_LP_FEE", uint256(100)), // 1%
             additionalBuyFee: vm.envOr("ADDITIONAL_BUY_FEE", uint256(0)), // 0%
-           
+            
             // Sell fees (in basis points)
             sellMarketing: vm.envOr("SELL_MARKETING_FEE", uint256(300)), // 3%
             sellDev: vm.envOr("SELL_DEV_FEE", uint256(200)), // 2%

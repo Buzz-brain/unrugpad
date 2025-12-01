@@ -22,3 +22,8 @@ dist-ssr
 *.sw?
 .env
 /bolt
+
+Note.txt
+
+BSC_RPC_Endpoints_Guide.txt
+Unrugpad_Project_Summary.txt

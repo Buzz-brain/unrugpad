@@ -1,22 +1,24 @@
+
 import { createConfig, http } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { bsc, sepolia } from "wagmi/chains";
 import { injected, walletConnect } from "wagmi/connectors";
 
-const INFURA_SEPOLIA = import.meta.env.VITE_SEPOLIA_RPC_URL;
-// Read WalletConnect project id from Vite env (prefix VITE_). Fallback to previous id if missing.
+const BSC_RPC_URL = import.meta.env.VITE_BSC_RPC_URL;
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
+const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
+
 export const wagmiConfig = createConfig({
-  chains: [sepolia] as const,
+  chains: [bsc, sepolia] as const,
   transports: {
-    [sepolia.id]: http(INFURA_SEPOLIA),
+    [bsc.id]: http(BSC_RPC_URL),
+    [sepolia.id]: http(SEPOLIA_RPC_URL),
   },
   connectors: [
     injected(),
     walletConnect({ projectId: WALLETCONNECT_PROJECT_ID }),
   ],
 });
-
 
 // import { createAppKit } from "@reown/appkit-wagmi/react";
 // import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";

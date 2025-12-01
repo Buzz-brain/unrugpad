@@ -1,37 +1,36 @@
-import "@nomicfoundation/hardhat-verify";
-import dotenv from "dotenv";
-dotenv.config();
 import type { HardhatUserConfig } from "hardhat/config";
 
+import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
+import { configVariable } from "hardhat/config";
+
 const config: HardhatUserConfig = {
+  plugins: [hardhatToolboxViemPlugin],
   solidity: {
-    version: "0.8.28",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
+    compilers: [
+      {
+        version: "0.8.24",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+        },
       },
-      viaIR: true,
-    },
+      {
+        version: "0.8.28",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+        },
+      },
+    ],
   },
   networks: {
     sepolia: {
       type: "http",
-      url: process.env.INFURA_API_URL || "",
-      accounts: process.env.PRIVATE_KEY
-        ? ([process.env.PRIVATE_KEY] as string[])
-        : [],
-      chainId: 11155111,
+      url: configVariable("SEPOLIA_RPC_URL"),
+      accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
     // Add other networks here if needed
   },
 };
 
-const finalConfig = {
-  ...config,
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY || "",
-  },
-} as HardhatUserConfig;
-
-export default finalConfig;
+export default config;

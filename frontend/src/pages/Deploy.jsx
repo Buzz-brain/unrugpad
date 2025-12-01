@@ -1,36 +1,39 @@
-import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { Slider, Tooltip } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'react-toastify';
-import Button from '../components/Button';
-import Card from '../components/Card';
-import Input from '../components/Input';
-import { useWeb3 } from '../contexts/Web3Context';
-import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
-import { BrowserProvider, ContractFactory, parseUnits } from 'ethers';
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Slider, Tooltip } from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Input from "../components/Input";
+import { useWeb3 } from "../contexts/Web3Context";
+import { useWalletModal } from "../contexts/WalletModalContext";
+import UnrugpadTokenFactoryABI from "../abis/UnrugpadTokenFactory.json";
+import { ethers } from "ethers";
 
 const Deploy = () => {
   const navigate = useNavigate();
-  const { isConnected, account } = useWeb3();
+  const { isConnected, account, balance, chainId } = useWeb3();
   const [isDeploying, setIsDeploying] = useState(false);
+  const [globalError, setGlobalError] = useState("");
+  const { open: openWalletModal } = useWalletModal();
+  const [deploymentFee, setDeploymentFee] = useState(null);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    symbol: '',
-    totalSupply: '',
-    ownerAddress: account || '',
-    marketingWallet: '',
-    devWallet: '',
-    buyMarketingFee: '',
-    buyDevFee: '',
-    buyLpFee: '',
-    buyBurnFee: '',
-    sellMarketingFee: '',
-    sellDevFee: '',
-    sellLpFee: '',
-  sellBurnFee: '',
-  maxTxPercent: 0.5,
-  maxWalletPercent: 0.5,
+    name: "",
+    symbol: "",
+    totalSupply: "",
+    ownerAddress: account || "",
+    marketingWallet: "",
+    devWallet: "",
+    buyMarketingFee: "",
+    buyDevFee: "",
+    buyLpFee: "",
+    sellMarketingFee: "",
+    sellDevFee: "",
+    sellLpFee: "",
+    maxTxPercent: 0.5,
+    maxWalletPercent: 0.5,
   });
 
   const [errors, setErrors] = useState({});
@@ -38,62 +41,100 @@ const Deploy = () => {
   // Helper to compute token value for a percent
   const getTokenValue = (percent) => {
     const supply = Number(formData.totalSupply || 0);
-    return supply > 0 ? ((supply * percent) / 100).toLocaleString() : '0';
+    return supply > 0 ? ((supply * percent) / 100).toLocaleString() : "0";
   };
 
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.name.trim()) newErrors.name = 'Token name is required';
-    if (!formData.symbol.trim()) newErrors.symbol = 'Token symbol is required';
+    if (!formData.name.trim()) newErrors.name = "Token name is required";
+    if (!formData.symbol.trim()) newErrors.symbol = "Token symbol is required";
     if (!formData.totalSupply || formData.totalSupply <= 0)
-      newErrors.totalSupply = 'Total supply must be greater than 0';
-    if (!formData.ownerAddress.trim()) newErrors.ownerAddress = 'Owner address is required';
-    if (!formData.marketingWallet.trim()) newErrors.marketingWallet = 'Marketing wallet is required';
-    if (!formData.devWallet.trim()) newErrors.devWallet = 'Dev wallet is required';
+      newErrors.totalSupply = "Total supply must be greater than 0";
+    if (!formData.ownerAddress.trim())
+      newErrors.ownerAddress = "Owner address is required";
+    if (!formData.marketingWallet.trim())
+      newErrors.marketingWallet = "Marketing wallet is required";
+    if (!formData.devWallet.trim())
+      newErrors.devWallet = "Dev wallet is required";
 
     // Validate individual fees (0-30%)
     const feeFields = [
-      'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
-      'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee',
+      "buyMarketingFee",
+      "buyDevFee",
+      "buyLpFee",
+      "sellMarketingFee",
+      "sellDevFee",
+      "sellLpFee",
     ];
     feeFields.forEach((field) => {
       const val = Number(formData[field] || 0);
-      if (val < 0 || val > 30) newErrors[field] = 'Fee must be between 0-30%';
+      if (val < 0 || val > 30) newErrors[field] = "Fee must be between 0-30%";
     });
 
     // Validate total buy/sell fee (≤ 30% each)
-    const totalBuyFee = ['buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee']
-      .map((f) => Number(formData[f] || 0)).reduce((a, b) => a + b, 0);
-    const totalSellFee = ['sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee']
-      .map((f) => Number(formData[f] || 0)).reduce((a, b) => a + b, 0);
-    if (totalBuyFee > 30) newErrors.totalBuyFee = 'Total buy fee must not exceed 30%';
-    if (totalSellFee > 30) newErrors.totalSellFee = 'Total sell fee must not exceed 30%';
+    const totalBuyFee = ["buyMarketingFee", "buyDevFee", "buyLpFee"]
+      .map((f) => Number(formData[f] || 0))
+      .reduce((a, b) => a + b, 0);
+    const totalSellFee = ["sellMarketingFee", "sellDevFee", "sellLpFee"]
+      .map((f) => Number(formData[f] || 0))
+      .reduce((a, b) => a + b, 0);
+    if (totalBuyFee > 30)
+      newErrors.totalBuyFee = "Total buy fee must not exceed 30%";
+    if (totalSellFee > 30)
+      newErrors.totalSellFee = "Total sell fee must not exceed 30%";
     // Combined buy + sell must not exceed 60%
-    if (totalBuyFee + totalSellFee > 60) newErrors.totalFee = 'Total fee (Buy + Sell) must not exceed 60%';
+    if (totalBuyFee + totalSellFee > 60)
+      newErrors.totalFee = "Total fee (Buy + Sell) must not exceed 60%";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  useEffect(() => {
+    // Check if user has enough BNB for gas (e.g., 0.005 BNB)
+    if (!isConnected || chainId !== 56) {
+      setDeploymentFee(null);
+      setInsufficientFunds(false);
+      return;
+    }
+    // Set deploymentFee to 0n (free)
+    setDeploymentFee(0n);
+    try {
+      const minGasBNB = 0.005; // Minimum BNB for gas (adjust as needed)
+      const userBalance = parseFloat(balance || "0");
+      setInsufficientFunds(userBalance < minGasBNB);
+    } catch (err) {
+      setInsufficientFunds(false);
+      console.error("Error checking user balance for gas:", err);
+    }
+  }, [isConnected, account, balance, chainId]);
+
   // Realtime validation for fee fields and totals
   const handleChange = (field, value) => {
     // Only allow numbers and empty string for fee fields
     let val = value;
-    if ([
-      'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
-      'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee',
-      'totalSupply'
-    ].includes(field)) {
-      if (val === '') {
-        val = '';
+    if (
+      [
+        "buyMarketingFee",
+        "buyDevFee",
+        "buyLpFee",
+        "sellMarketingFee",
+        "sellDevFee",
+        "sellLpFee",
+        "totalSupply",
+      ].includes(field)
+    ) {
+      if (val === "") {
+        val = "";
       } else {
-        val = val.replace(/[^\d.]/g, '');
+        val = val.replace(/[^\d.]/g, "");
         // Prevent multiple decimals
-        const parts = val.split('.');
-        if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+        const parts = val.split(".");
+        if (parts.length > 2) val = parts[0] + "." + parts.slice(1).join("");
         // Prevent leading zeros
-        if (val.length > 1 && val[0] === '0' && val[1] !== '.') val = val.replace(/^0+/, '');
+        if (val.length > 1 && val[0] === "0" && val[1] !== ".")
+          val = val.replace(/^0+/, "");
       }
     }
 
@@ -104,54 +145,66 @@ const Deploy = () => {
     let newErrors = { ...errors };
     // Individual fee validation
     // Individual fee validation
-    if ([
-      'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
-      'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee'
-    ].includes(field)) {
+    if (
+      [
+        "buyMarketingFee",
+        "buyDevFee",
+        "buyLpFee",
+        "sellMarketingFee",
+        "sellDevFee",
+        "sellLpFee",
+      ].includes(field)
+    ) {
       const numVal = Number(val);
-      if (val !== '' && (numVal < 0 || numVal > 30)) {
-        newErrors[field] = 'Fee must be between 0-30%';
+      if (val !== "" && (numVal < 0 || numVal > 30)) {
+        newErrors[field] = "Fee must be between 0-30%";
       } else {
-        newErrors[field] = '';
+        newErrors[field] = "";
       }
     }
     // Total buy/sell fee validation (≤ 30% each)
-    const buyFees = [
-      'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee'
-    ].map(f => Number(f === field ? val : formData[f] || 0));
-    const sellFees = [
-      'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee'
-    ].map(f => Number(f === field ? val : formData[f] || 0));
+    const buyFees = ["buyMarketingFee", "buyDevFee", "buyLpFee"].map((f) =>
+      Number(f === field ? val : formData[f] || 0)
+    );
+    const sellFees = ["sellMarketingFee", "sellDevFee", "sellLpFee"].map((f) =>
+      Number(f === field ? val : formData[f] || 0)
+    );
     const totalBuyFee = buyFees.reduce((a, b) => a + b, 0);
     const totalSellFee = sellFees.reduce((a, b) => a + b, 0);
-    if ([
-      'buyMarketingFee', 'buyDevFee', 'buyLpFee', 'buyBurnFee',
-      'sellMarketingFee', 'sellDevFee', 'sellLpFee', 'sellBurnFee'
-    ].includes(field)) {
+    if (
+      [
+        "buyMarketingFee",
+        "buyDevFee",
+        "buyLpFee",
+        "sellMarketingFee",
+        "sellDevFee",
+        "sellLpFee",
+      ].includes(field)
+    ) {
       if (totalBuyFee > 30) {
-        newErrors.totalBuyFee = 'Total buy fee must not exceed 30%';
+        newErrors.totalBuyFee = "Total buy fee must not exceed 30%";
       } else {
-        newErrors.totalBuyFee = '';
+        newErrors.totalBuyFee = "";
       }
       if (totalSellFee > 30) {
-        newErrors.totalSellFee = 'Total sell fee must not exceed 30%';
+        newErrors.totalSellFee = "Total sell fee must not exceed 30%";
       } else {
-        newErrors.totalSellFee = '';
+        newErrors.totalSellFee = "";
       }
       // Combined buy + sell must not exceed 60%
       if (totalBuyFee + totalSellFee > 60) {
-        newErrors.totalFee = 'Total fee (Buy + Sell) must not exceed 60%';
+        newErrors.totalFee = "Total fee (Buy + Sell) must not exceed 60%";
       } else {
-        newErrors.totalFee = '';
+        newErrors.totalFee = "";
       }
     }
     // Total supply validation
-    if (field === 'totalSupply') {
+    if (field === "totalSupply") {
       const numVal = Number(val);
-      if (val === '' || numVal <= 0) {
-        newErrors.totalSupply = 'Total supply must be greater than 0';
+      if (val === "" || numVal <= 0) {
+        newErrors.totalSupply = "Total supply must be greater than 0";
       } else {
-        newErrors.totalSupply = '';
+        newErrors.totalSupply = "";
       }
     }
     setErrors(newErrors);
@@ -161,48 +214,137 @@ const Deploy = () => {
     e.preventDefault();
 
     if (!isConnected) {
-      toast.error('Please connect your wallet first');
+      setGlobalError("Please connect your wallet first.");
       return;
     }
 
     if (!validateForm()) {
-      toast.error('Please fix all errors before deploying');
+      setGlobalError("Please fix all errors before deploying.");
       return;
     }
 
     try {
       setIsDeploying(true);
-      // Prepare contract deployment using MetaMask
-      if (typeof window.ethereum === 'undefined') {
-        toast.error('MetaMask is not available');
+      // Prepare contract deployment using Factory
+      if (typeof window.ethereum === "undefined") {
+        openWalletModal();
+        setIsDeploying(false);
         return;
       }
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      // Prepare constructor args (update as needed for your contract)
-      // If your contract has no constructor args, pass []
-      const constructorArgs = [];
-      // If your contract expects args, build them from formData here
-      // Example: [formData.name, formData.symbol, ...]
-      // If you need to pass supply as uint256, use parseUnits(formData.totalSupply, 18)
-      // const constructorArgs = [formData.name, formData.symbol, parseUnits(formData.totalSupply, 18), ...];
 
-      const factory = new ContractFactory(UnrugpadTokenABI.abi, UnrugpadTokenABI.bytecode, signer);
-      let contract;
+      // Fetch factory address from backend
+      let factoryAddress;
       try {
-        contract = await factory.deploy(...constructorArgs);
-        await contract.waitForDeployment();
-        toast.success('Token deployed successfully!');
-        navigate('/result', { state: { deployment: { address: contract.target, txHash: contract.deploymentTransaction().hash }, formData } });
+        const apiBaseUrl =
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+        const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
+        const data = await res.json();
+        factoryAddress = data.factory;
+        if (!factoryAddress) throw new Error("Factory address not found");
       } catch (err) {
-        console.error('Deployment error:', err);
-        toast.error(err?.message || 'Failed to deploy token');
+        setGlobalError(
+          "Failed to fetch factory address. Please check your backend configuration."
+        );
+        setIsDeploying(false);
+        return;
+      }
+
+      // Prepare TokenConfig struct
+      const config = {
+        name: formData.name,
+        symbol: formData.symbol,
+        totalSupply: ethers.parseUnits(formData.totalSupply || "0", 18),
+        owner: formData.ownerAddress,
+        marketingWallet: formData.marketingWallet,
+        devWallet: formData.devWallet,
+        buyFees: {
+          marketing: Number(formData.buyMarketingFee || 0),
+          dev: Number(formData.buyDevFee || 0),
+          lp: Number(formData.buyLpFee || 0),
+        },
+        sellFees: {
+          marketing: Number(formData.sellMarketingFee || 0),
+          dev: Number(formData.sellDevFee || 0),
+          lp: Number(formData.sellLpFee || 0),
+        },
+        buyFee: [
+          Number(formData.buyMarketingFee || 0),
+          Number(formData.buyDevFee || 0),
+          Number(formData.buyLpFee || 0),
+        ].reduce((a, b) => a + b, 0),
+        sellFee: [
+          Number(formData.sellMarketingFee || 0),
+          Number(formData.sellDevFee || 0),
+          Number(formData.sellLpFee || 0),
+        ].reduce((a, b) => a + b, 0),
+      };
+
+      // Metadata (optional, can be empty or add more info)
+      const metadata = "";
+
+      // Instantiate factory contract
+      const factory = new ethers.Contract(
+        factoryAddress,
+        UnrugpadTokenFactoryABI.abi,
+        signer
+      );
+
+      try {
+        // Get deployment fee if required
+        let deploymentFee = 0n;
+        try {
+          deploymentFee = await factory.deploymentFee();
+        } catch {}
+
+        const tx = await factory.createToken(config, metadata, {
+          value: deploymentFee,
+        });
+        const receipt = await tx.wait();
+        // Find TokenCreated event
+        let newTokenAddress = null;
+        for (const log of receipt.logs) {
+          try {
+            const parsed = factory.interface.parseLog(log);
+            if (parsed.name === "TokenCreated") {
+              newTokenAddress = parsed.args.tokenAddress;
+              break;
+            }
+          } catch {}
+        }
+        if (!newTokenAddress) {
+          setGlobalError("Token deployed but address not found in events.");
+          setIsDeploying(false);
+          return;
+        }
+        toast.success("Token deployed successfully!");
+        navigate("/result", {
+          state: {
+            deployment: {
+              address: newTokenAddress,
+              txHash: tx.hash,
+              fee: deploymentFee?.toString(),
+            },
+            formData,
+          },
+        });
+        setGlobalError("");
+      } catch (err) {
+        setGlobalError(
+          "Contract error: Failed to deploy token. Please check your network and contract configuration."
+        );
+        setIsDeploying(false);
+        return;
       }
     } catch (error) {
-      console.error('Deployment error:', error);
+      console.error("Deployment error:", error);
       // Show backend error message if available
-      const backendMsg = error.response?.data?.error || error.response?.data?.message;
-      toast.error(backendMsg || 'Failed to deploy token');
+      const backendMsg =
+        error.response?.data?.error || error.response?.data?.message;
+      setGlobalError(
+        backendMsg || "Failed to deploy token. Please try again later."
+      );
     } finally {
       setIsDeploying(false);
     }
@@ -212,12 +354,76 @@ const Deploy = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center px-4">
         <Card className="max-w-md text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Wallet Not Connected</h2>
-          <p className="text-gray-400 mb-6">Please connect your wallet to deploy a token</p>
+          <h2 className="text-2xl font-bold text-white mb-4">
+            Wallet Not Connected
+          </h2>
+          <p className="text-gray-400 mb-6">
+            Please connect your wallet to deploy a token
+          </p>
         </Card>
       </div>
     );
   }
+
+  if (chainId !== 56) {
+    const handleSwitchNetwork = async () => {
+      if (window.ethereum) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x38" }],
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: "0x38",
+                    chainName: "Binance Smart Chain Mainnet",
+                    nativeCurrency: {
+                      name: "BNB",
+                      symbol: "BNB",
+                      decimals: 18,
+                    },
+                    rpcUrls: ["https://bsc-dataseed.binance.org/"],
+                    blockExplorerUrls: ["https://bscscan.com/"],
+                  },
+                ],
+              });
+            } catch (addError) {
+              alert("Failed to add BSC Mainnet to MetaMask.");
+            }
+          } else {
+            alert("Failed to switch network.");
+          }
+        }
+      } else {
+        alert("MetaMask is not available.");
+      }
+    };
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center px-4">
+        <Card className="max-w-md text-center border border-yellow-500">
+          <h2 className="text-2xl font-bold text-yellow-400 mb-4">
+            Wrong Network
+          </h2>
+          <p className="text-gray-300 mb-6">
+            Please switch your wallet to{" "}
+            <span className="font-bold">BSC Mainnet</span> to deploy a token.
+          </p>
+          <div className="flex justify-center mt-4">
+            <Button variant="primary" onClick={handleSwitchNetwork}>
+              Switch Network
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // No need for a local modal overlay, handled globally
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 pt-32 pb-20">
@@ -237,7 +443,6 @@ const Deploy = () => {
 
         <Card glow>
           <form onSubmit={handleSubmit} className="space-y-8">
-            {/* === Token Details === */}
             <div className="bg-gray-800/50 border border-gray-700 rounded-md p-4">
               <div className="mb-4">
                 <div className="flex items-center gap-3">
@@ -252,6 +457,7 @@ const Deploy = () => {
                   </div>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                 <Input
                   label="Token Name"
@@ -262,7 +468,6 @@ const Deploy = () => {
                   required
                   tooltip="The full name of your token"
                 />
-
                 <Input
                   label="Token Symbol"
                   value={formData.symbol}
@@ -275,6 +480,7 @@ const Deploy = () => {
                   tooltip="The ticker symbol (3-5 characters recommended)"
                 />
               </div>
+
               <div className="mt-4">
                 <Input
                   label="Total Supply"
@@ -289,7 +495,6 @@ const Deploy = () => {
               </div>
             </div>
 
-            {/* === Wallets === */}
             <div className="bg-gray-800/50 border border-gray-700 rounded-md p-4 mt-6">
               <div className="flex items-center gap-3 mb-3">
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
@@ -300,7 +505,6 @@ const Deploy = () => {
                   </p>
                 </div>
               </div>
-
               <Input
                 label="Owner Address"
                 value={formData.ownerAddress}
@@ -312,7 +516,6 @@ const Deploy = () => {
               />
             </div>
 
-            {/* === Fee Configuration === */}
             <div className="bg-gray-800/50 border border-gray-700 rounded-md p-4 mt-8">
               <div className="flex items-center gap-3 mb-3">
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
@@ -321,11 +524,11 @@ const Deploy = () => {
                     Fee Configuration
                   </h3>
                   <p className="text-sm text-gray-400">
-                    Configure buy and sell fee splits (marketing, dev, LP,
-                    burn).
+                    Configure buy and sell fee splits (marketing, dev, LP).
                   </p>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                 <Input
                   label="Marketing Wallet"
@@ -386,17 +589,6 @@ const Deploy = () => {
                       error={errors.buyLpFee}
                       tooltip="% of buy fee to liquidity pool (no wallet)"
                     />
-                    <Input
-                      label="Burn Buy Fee (%)"
-                      type="number"
-                      value={formData.buyBurnFee}
-                      onChange={(e) =>
-                        handleChange("buyBurnFee", e.target.value)
-                      }
-                      placeholder="0-30"
-                      error={errors.buyBurnFee}
-                      tooltip="% of buy fee to burning (optional)"
-                    />
                   </div>
                   <div className="mt-2 text-sm text-gray-400">
                     Total Buy Fee:{" "}
@@ -407,16 +599,11 @@ const Deploy = () => {
                           : "text-cyan-400"
                       }
                     >
-                      {[
-                        "buyMarketingFee",
-                        "buyDevFee",
-                        "buyLpFee",
-                        "buyBurnFee",
-                      ]
+                      {["buyMarketingFee", "buyDevFee", "buyLpFee"]
                         .map((f) => Number(formData[f] || 0))
                         .reduce((a, b) => a + b, 0)}
                       %
-                    </span>
+                    </span>{" "}
                     {errors.totalBuyFee && (
                       <span className="ml-2 text-red-400 font-semibold">
                         ({errors.totalBuyFee})
@@ -424,6 +611,7 @@ const Deploy = () => {
                     )}
                   </div>
                 </div>
+
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-2">
                     Sell Fee Configuration
@@ -462,17 +650,6 @@ const Deploy = () => {
                       error={errors.sellLpFee}
                       tooltip="% of sell fee to liquidity pool (no wallet)"
                     />
-                    <Input
-                      label="Burn Sell Fee (%)"
-                      type="number"
-                      value={formData.sellBurnFee}
-                      onChange={(e) =>
-                        handleChange("sellBurnFee", e.target.value)
-                      }
-                      placeholder="0-30"
-                      error={errors.sellBurnFee}
-                      tooltip="% of sell fee to burning (optional)"
-                    />
                   </div>
                   <div className="mt-2 text-sm text-gray-400">
                     Total Sell Fee:{" "}
@@ -483,16 +660,11 @@ const Deploy = () => {
                           : "text-cyan-400"
                       }
                     >
-                      {[
-                        "sellMarketingFee",
-                        "sellDevFee",
-                        "sellLpFee",
-                        "sellBurnFee",
-                      ]
+                      {["sellMarketingFee", "sellDevFee", "sellLpFee"]
                         .map((f) => Number(formData[f] || 0))
                         .reduce((a, b) => a + b, 0)}
                       %
-                    </span>
+                    </span>{" "}
                     {errors.totalSellFee && (
                       <span className="ml-2 text-red-400 font-semibold">
                         ({errors.totalSellFee})
@@ -502,7 +674,6 @@ const Deploy = () => {
                 </div>
               </div>
 
-              {/* Enhanced Total Fee Warning - spans full form below buy/sell config */}
               <div className="w-full flex justify-center mt-6">
                 <motion.div
                   initial={{ scale: 1 }}
@@ -512,11 +683,11 @@ const Deploy = () => {
                       : { scale: 1 }
                   }
                   transition={{ duration: 0.5 }}
-                  className={`rounded-lg px-4 py-3 text-base font-semibold flex items-center gap-2 shadow-md ${
+                  className={
                     errors.totalFee
-                      ? "bg-red-900 text-red-200 border-2 border-red-400"
-                      : "bg-yellow-900 text-yellow-200 border border-yellow-600"
-                  }`}
+                      ? "rounded-lg px-4 py-3 text-base font-semibold flex items-center gap-2 shadow-md bg-red-900 text-red-200 border-2 border-red-400"
+                      : "rounded-lg px-4 py-3 text-base font-semibold flex items-center gap-2 shadow-md bg-yellow-900 text-yellow-200 border border-yellow-600"
+                  }
                   style={{ minWidth: "320px", maxWidth: "500px" }}
                 >
                   <svg
@@ -545,14 +716,13 @@ const Deploy = () => {
                         "buyMarketingFee",
                         "buyDevFee",
                         "buyLpFee",
-                        "buyBurnFee",
                         "sellMarketingFee",
                         "sellDevFee",
                         "sellLpFee",
-                        "sellBurnFee",
                       ]
                         .map((f) => Number(formData[f] || 0))
-                        .reduce((a, b) => a + b, 0)}%
+                        .reduce((a, b) => a + b, 0)}
+                      %
                       {errors.totalFee ? (
                         <span className="text-red-400 font-bold ml-2">
                           ({errors.totalFee})
@@ -568,7 +738,6 @@ const Deploy = () => {
               </div>
             </div>
 
-            {/* === Anti-Whale Limits === */}
             <div className="bg-gray-800/50 border border-gray-700 rounded-md p-4 mt-6">
               <div className="flex items-center gap-3 mb-3">
                 <span className="w-1.5 h-6 bg-cyan-400 rounded" />
@@ -581,7 +750,7 @@ const Deploy = () => {
                   </p>
                 </div>
               </div>
-              {/* Max Transaction & Wallet Sliders */}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-white font-semibold mb-1 flex items-center gap-1">
@@ -646,7 +815,6 @@ const Deploy = () => {
               </div>
             </div>
 
-            {/* Summary Panel */}
             <div className="bg-gray-800 rounded-lg p-4 mt-8 border border-cyan-900">
               <h4 className="text-xl text-cyan-300 font-semibold mb-2">
                 Summary
@@ -679,14 +847,12 @@ const Deploy = () => {
                 <li>
                   <span className="font-bold">Buy Fees:</span> Marketing{" "}
                   {formData.buyMarketingFee || 0}%, Dev{" "}
-                  {formData.buyDevFee || 0}%, LP {formData.buyLpFee || 0}%, Burn{" "}
-                  {formData.buyBurnFee || 0}%
+                  {formData.buyDevFee || 0}%, LP {formData.buyLpFee || 0}%
                 </li>
                 <li>
                   <span className="font-bold">Sell Fees:</span> Marketing{" "}
                   {formData.sellMarketingFee || 0}%, Dev{" "}
-                  {formData.sellDevFee || 0}%, LP {formData.sellLpFee || 0}%,
-                  Burn {formData.sellBurnFee || 0}%
+                  {formData.sellDevFee || 0}%, LP {formData.sellLpFee || 0}%
                 </li>
               </ul>
             </div>
@@ -705,7 +871,10 @@ const Deploy = () => {
                   isDeploying ||
                   !!errors.totalFee ||
                   !!errors.totalBuyFee ||
-                  !!errors.totalSellFee
+                  !!errors.totalSellFee ||
+                  !isConnected ||
+                  chainId !== 56 ||
+                  insufficientFunds
                 }
                 className="w-full"
                 title={
@@ -720,6 +889,12 @@ const Deploy = () => {
               >
                 {isDeploying ? "Deploying Token..." : "Deploy Token"}
               </Button>
+              {insufficientFunds && (
+                <div className="text-red-400 text-sm mt-2 text-center">
+                  You need at least 0.005 BNB for gas to deploy a token. Your
+                  current balance is {balance || "1"} BNB.
+                </div>
+              )}
             </motion.div>
           </form>
         </Card>

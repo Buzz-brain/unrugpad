@@ -3,19 +3,17 @@ import { Wallet, Zap } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useWeb3 } from '../contexts/Web3Context';
 import Button from './Button';
-import { useState } from 'react';
+import { useWalletModal } from '../contexts/WalletModalContext';
 const Navbar = () => {
-  const { account, balance, isConnecting, connectWallet, disconnectWallet, isConnected, connectors } = useWeb3();
-  const [showWalletModal, setShowWalletModal] = useState(false);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalError, setModalError] = useState('');
+  const { account, balance, isConnecting, connectWallet, disconnectWallet, isConnected, connectors, chainId } = useWeb3();
+  const { open: openWalletModal } = useWalletModal();
   const hasInjected = typeof window !== 'undefined' && window.ethereum;
   const location = useLocation();
 
   const navItems = [
     { path: '/', label: 'Home' },
     { path: '/deploy', label: 'Deploy' },
-    // { path: '/dashboard', label: 'Dashboard' },
+    { path: '/dashboard', label: 'Dashboard' },
     // { path: '/uniswap', label: 'Uniswap' },
   ];
 
@@ -27,7 +25,7 @@ const Navbar = () => {
     if (hasInjected) {
       connectWallet();
     } else {
-      setShowWalletModal(true);
+      openWalletModal();
     }
   };
 
@@ -40,13 +38,11 @@ const Navbar = () => {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <Link to="/" className="flex items-center gap-3 group">
-            <motion.div
-              whileHover={{ rotate: 360 }}
-              transition={{ duration: 0.6 }}
-              className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/50"
-            >
-              <Zap size={24} className="text-white" />
-            </motion.div>
+            <img
+              src="/logo.png"
+              alt="Company Logo"
+              className="w-10 h-10 rounded-full object-contain bg-white mb-2 border-2 border-cyan-400 shadow"
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
               Unrugpad
             </span>
@@ -54,16 +50,12 @@ const Navbar = () => {
 
           <div className="hidden md:flex items-center gap-8">
             {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className="relative group"
-              >
+              <Link key={item.path} to={item.path} className="relative group">
                 <span
                   className={`text-sm font-medium transition-colors ${
                     location.pathname === item.path
-                      ? 'text-cyan-400'
-                      : 'text-gray-300 hover:text-white'
+                      ? "text-cyan-400"
+                      : "text-gray-300 hover:text-white"
                   }`}
                 >
                   {item.label}
@@ -83,7 +75,9 @@ const Navbar = () => {
               <div className="flex items-center gap-3">
                 <div className="hidden sm:flex flex-col items-end">
                   <span className="text-xs text-gray-400">Balance</span>
-                  <span className="text-sm font-semibold text-white">{balance} ETH</span>
+                  <span className="text-sm font-semibold text-white">
+                    {chainId === 56 ? balance : "0"} BNB
+                  </span>
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
@@ -92,7 +86,9 @@ const Navbar = () => {
                   className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl border border-gray-700 transition-colors"
                 >
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span className="text-sm font-medium text-white">{formatAddress(account)}</span>
+                  <span className="text-sm font-medium text-white">
+                    {formatAddress(account)}
+                  </span>
                 </motion.button>
               </div>
             ) : (
@@ -106,46 +102,7 @@ const Navbar = () => {
                   <Wallet size={18} />
                   Connect Wallet
                 </Button>
-                {showWalletModal && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
-                    <div className="bg-gray-900 rounded-xl p-6 shadow-xl flex flex-col items-center gap-4">
-                      <span className="text-lg font-semibold text-white mb-2">No wallet detected</span>
-                      <span className="text-sm text-gray-300 mb-4">Install MetaMask or use WalletConnect to connect a wallet.</span>
-                      <Button
-                        onClick={async () => {
-                          setModalError('');
-                          if (!connectors || !connectors[1]) {
-                            setModalError('WalletConnect connector not available.');
-                            return;
-                          }
-                          try {
-                            setModalLoading(true);
-                            await connectWallet({ connector: connectors[1] });
-                            setShowWalletModal(false);
-                          } catch (err) {
-                            console.error('WalletConnect connect error', err);
-                            setModalError('Could not connect via WalletConnect. Check network and try again.');
-                          } finally {
-                            setModalLoading(false);
-                          }
-                        }}
-                        size="sm"
-                        className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-                      >
-                        <Wallet size={18} />
-                        {modalLoading ? 'Connecting...' : 'Connect with WalletConnect'}
-                      </Button>
-                      {modalError && <div className="text-sm text-red-400 mt-2">{modalError}</div>}
-                      <Button
-                        onClick={() => setShowWalletModal(false)}
-                        size="sm"
-                        className="gap-2 bg-gray-700 hover:bg-gray-800 text-white"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {/* Wallet modal is now global via WalletModalContext */}
               </>
             )}
           </div>

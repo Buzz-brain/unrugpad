@@ -7,6 +7,15 @@ import confetti from 'canvas-confetti';
 import Button from '../components/Button';
 import Card from '../components/Card';
 
+import deployedAddresses from '../../../backend/deployed_addresses.json';
+
+const explorerUrls = {
+  'bsc-mainnet': 'https://bscscan.com/address/',
+  'bsc-testnet': 'https://testnet.bscscan.com/address/',
+  'sepolia': 'https://sepolia.etherscan.io/address/',
+  'ethereum': 'https://etherscan.io/address/',
+};
+
 const DeploymentResult = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -33,6 +42,31 @@ const DeploymentResult = () => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard!`);
   };
+
+
+  // Get network from backend config
+  const network = deployedAddresses.network || 'sepolia';
+  const explorerBase = explorerUrls[network] || explorerUrls['sepolia'];
+
+  const [globalError, setGlobalError] = useState('');
+
+  useEffect(() => {
+    if (!location.state?.deployment) {
+      setGlobalError('Deployment result not found. Please deploy a token first.');
+    }
+  }, [location]);
+
+  if (globalError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center px-4">
+        <Card className="max-w-md text-center border border-red-500">
+          <h2 className="text-2xl font-bold text-red-400 mb-4">Error</h2>
+          <p className="text-gray-300 mb-6">{globalError}</p>
+          <Button variant="danger" onClick={() => navigate('/deploy')}>Go to Deploy</Button>
+        </Card>
+      </div>
+    );
+  }
 
   if (!deployment) return null;
 
@@ -81,6 +115,7 @@ const DeploymentResult = () => {
           </p>
         </motion.div>
 
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <Card glow>
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -89,38 +124,27 @@ const DeploymentResult = () => {
             <div>
               <InfoRow label="Token Name" value={form?.name || "N/A"} />
               <InfoRow label="Symbol" value={form?.symbol || "N/A"} />
-              <InfoRow
-                label="Total Supply"
-                value={form?.totalSupply || "N/A"}
-              />
+              <InfoRow label="Total Supply" value={form?.totalSupply || "N/A"} />
               {deployment?.address && (
-                <InfoRow
-                  label="Contract Address"
-                  value={deployment.address}
-                  copyable
-                />
+                <InfoRow label="Contract Address" value={deployment.address} copyable />
+              )}
+              {deployment?.txHash && (
+                <InfoRow label="Transaction Hash" value={deployment.txHash} copyable />
+              )}
+              {deployment?.fee && (
+                <InfoRow label="Deployment Fee" value={deployment.fee} />
               )}
             </div>
           </Card>
 
           <Card glow>
-            <h2 className="text-xl font-bold text-white mb-4">
-              Fee Configuration
-            </h2>
+            <h2 className="text-xl font-bold text-white mb-4">Fee Configuration</h2>
             <div>
               <InfoRow label="Buy Fee" value={`${form?.buyFee || 0}%`} />
               <InfoRow label="Sell Fee" value={`${form?.sellFee || 0}%`} />
-              <InfoRow
-                label="Owner"
-                value={form?.ownerAddress || "N/A"}
-                copyable
-              />
+              <InfoRow label="Owner" value={form?.ownerAddress || "N/A"} copyable />
               {form?.marketingWallet && (
-                <InfoRow
-                  label="Marketing Wallet"
-                  value={form.marketingWallet}
-                  copyable
-                />
+                <InfoRow label="Marketing Wallet" value={form.marketingWallet} copyable />
               )}
               {form?.devWallet && (
                 <InfoRow label="Dev Wallet" value={form.devWallet} copyable />
@@ -142,10 +166,9 @@ const DeploymentResult = () => {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                // onClick={() => window.open(`https://etherscan.io/address/${deployment.address}`, '_blank')}
                 onClick={() =>
                   window.open(
-                    `https://sepolia.etherscan.io/address/${deployment.address}`,
+                    `${explorerBase}${deployment.address}`,
                     "_blank"
                   )
                 }

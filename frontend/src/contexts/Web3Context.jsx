@@ -1,6 +1,5 @@
 import { createContext, useContext } from 'react';
 import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
-import { useChainId } from 'wagmi';
 
 const Web3Context = createContext();
 
@@ -13,11 +12,12 @@ export const useWeb3 = () => {
 };
 
 export const Web3Provider = ({ children }) => {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { data: balanceData } = useBalance({ address });
-  const chainId = useChainId();
+  // const { chain } = useNetwork();
+  const chainId = chain?.id;
 
   const value = {
     account: address,
@@ -25,6 +25,7 @@ export const Web3Provider = ({ children }) => {
     connectWallet: (opts) => connect(opts ? { connector: opts.connector } : { connector: connectors[0] }),
     disconnectWallet: disconnect,
     connectors,
+    chain,
     chainId,
     balance: balanceData ? balanceData.formatted : "0",
     isConnecting: isPending,
