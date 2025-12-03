@@ -1,6 +1,59 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Coins, Send, CheckCircle, Eye } from 'lucide-react';
+import { Coins, Send, CheckCircle, Eye, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+
+// --- AdvancedTokenDetailsModal: Modal-based advanced info section ---
+import { ChevronRight } from 'lucide-react';
+
+function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
+  if (!token) return null;
+  const advancedFields = [
+    { label: 'Buy Fee', value: token.buyFee },
+    { label: 'Sell Fee', value: token.sellFee },
+    { label: 'Buy Fees (Struct)', value: token.buyFees && typeof token.buyFees === 'object' ? JSON.stringify(token.buyFees) : token.buyFees },
+    { label: 'Sell Fees (Struct)', value: token.sellFees && typeof token.sellFees === 'object' ? JSON.stringify(token.sellFees) : token.sellFees },
+    { label: 'Platform Fee', value: token.platformFee },
+    { label: 'Total Buy Fee', value: token.getTotalBuyFee },
+    { label: 'Total Sell Fee', value: token.getTotalSellFee },
+    { label: 'Max Transaction Amount', value: token.maxTransactionAmount },
+    { label: 'Max Wallet Amount', value: token.maxWalletAmount },
+    { label: 'Limits In Effect', value: token.limitsInEffect ? 'Yes' : 'No' },
+    { label: 'Marketing Wallet', value: token.marketingWallet },
+    { label: 'Dev Wallet', value: token.devWallet },
+    { label: 'Platform Wallet', value: token.platformWallet },
+    { label: 'Factory', value: token.factory },
+    { label: 'DEX Pair', value: token.pancakePair },
+    { label: 'DEX Router', value: token.pancakeRouter },
+    { label: 'Deployment Metadata', value: token.deploymentMetadata },
+    { label: 'Circulating Supply', value: token.circulatingSupply },
+    { label: 'Swap Tokens At Amount', value: token.swapTokensAtAmount },
+    { label: 'Tokens For Marketing', value: token.tokensForMarketing },
+    { label: 'Tokens For Dev', value: token.tokensForDev },
+    { label: 'Tokens For Liquidity', value: token.tokensForLiquidity },
+    { label: 'Tokens For Platform', value: token.tokensForPlatform },
+    { label: 'Tokens For Buy Fee', value: token.tokensForBuyFee },
+    { label: 'Tokens For Sell Fee', value: token.tokensForSellFee },
+    { label: 'Version', value: token.version },
+    { label: 'Fee Exempt (You)', value: token.isFeeExempt ? 'Yes' : 'No' },
+    { label: 'Excluded From Fees (You)', value: token.userIsFeeExempt ? 'Yes' : 'No' }
+  ];
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Advanced Details: ${token.symbol}`} size="lg">
+      <div className="space-y-2">
+        <div className="flex flex-col gap-2">
+          {advancedFields.map((field, idx) => (
+            field.value !== undefined && field.value !== null && field.value !== '' && (
+              <div key={idx} className="flex justify-between text-sm border-b border-gray-800 pb-1">
+                <span className="text-gray-400">{field.label}:</span>
+                <span className="text-white font-mono text-right break-all max-w-[60%]">{field.value}</span>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
 import { toast } from 'react-toastify';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -16,6 +69,8 @@ import Modal from '../components/Modal';
 
 const Dashboard = () => {
   const { isConnected, account, provider, signer, chainId } = useWeb3();
+  // --- Modal state for advanced details ---
+  const [advancedModalToken, setAdvancedModalToken] = useState(null);
   // Log chainId for debugging
   // console.log('Current chainId:', chainId);
 
@@ -36,81 +91,200 @@ const Dashboard = () => {
   const [modalType, setModalType] = useState('transfer');
 
   const { open: openWalletModal } = useWalletModal();
-  useEffect(() => {
-    // Fetch factory address from backend and get tokens for connected user
-    const fetchTokens = async () => {
-      if (!account) return;
-      if (chainId !== 56) return; // Don't fetch tokens if not on BSC
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      try {
-        const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
-        const data = await res.json();
-        const factoryAddress = data.factory;
-        if (!factoryAddress) {
-          setTokens([]);
-          setGlobalError('Factory contract address not found. Please check your backend configuration.');
-          return;
-        }
-        // Use ethers to instantiate the factory contract
-        let providerOrSigner = null;
-        if (window.ethereum) {
-          const ethersProvider = new ethers.BrowserProvider(window.ethereum);
-          providerOrSigner = await ethersProvider.getSigner();
-        } else if (provider) {
-          providerOrSigner = provider;
-        } else {
-          setTokens([]);
-          setGlobalError('No Ethereum provider found. Please install MetaMask or use a supported wallet.');
-          openWalletModal();
-          return;
-        }
-        const factory = new ethers.Contract(factoryAddress, UnrugpadTokenFactoryABI.abi, providerOrSigner);
-        let userTokens = [];
-        try {
-          userTokens = await factory.getUserTokens(account);
-          setGlobalError('');
-        } catch (err) {
-          setGlobalError('Failed to fetch tokens from factory contract. Please check your network and contract deployment.');
-          setTokens([]);
-          return;
-        }
-        // Map to array of { address }
-        const tokenObjs = userTokens.map(addr => ({ address: addr }));
-        setTokens(tokenObjs);
-      } catch (err) {
+  // Fetch tokens function for manual refresh and useEffect
+  const fetchTokens = async () => {
+    if (!account) return;
+    if (chainId !== 56) return;
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    try {
+      const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
+      const data = await res.json();
+      const factoryAddress = data.factory;
+      // Log factory address separately for clarity
+      console.log("[DASHBOARD] Factory address:", factoryAddress);
+      if (!factoryAddress) {
         setTokens([]);
-        setGlobalError('Network error: Unable to fetch contract addresses. Please check your connection.');
+        setGlobalError('Factory contract address not found. Please check your backend configuration.');
+        return;
+      }
+      let providerOrSigner = null;
+      if (window.ethereum) {
+        const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+        providerOrSigner = await ethersProvider.getSigner();
+      } else if (provider) {
+        providerOrSigner = provider;
+      } else {
+        setTokens([]);
+        setGlobalError('No Ethereum provider found. Please install MetaMask or use a supported wallet.');
+        openWalletModal();
+        return;
+      }
+      console.log("[DASHBOARD] chainId:", chainId, "account:", account);
+      const factory = new ethers.Contract(factoryAddress, UnrugpadTokenFactoryABI.abi, providerOrSigner);
+      let userTokens = [];
+      try {
+        userTokens = await factory.getUserTokens(account);
+        // Log userTokens separately for clarity
+        console.log("[DASHBOARD] userTokens:", userTokens);
+        setGlobalError('');
+      } catch (err) {
+        console.error("[DASHBOARD] Error fetching userTokens:", err);
+        setGlobalError('Failed to fetch tokens from factory contract. Please check your network and contract deployment.');
+        setTokens([]);
+        return;
+      }
+      // Convert Proxy result to array for ethers v6 compatibility
+      const tokenArray = Array.from(userTokens);
+      const tokenObjs = tokenArray.map(addr => ({ address: addr }));
+      setTokens(tokenObjs);
+    } catch (err) {
+      console.error("[DASHBOARD] Network error:", err);
+      setTokens([]);
+      setGlobalError('Network error: Unable to fetch contract addresses. Please check your connection.');
+    }
+  };
+
+  useEffect(() => {
+    fetchTokens();
+    // Refetch tokens when account, provider, chainId, or after deployment
+    // Listen for navigation from deployment result
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchTokens();
       }
     };
-    fetchTokens();
-    // Only refetch when account changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [account, provider, openWalletModal, chainId]);
 
   // Fetch live token details from blockchain
   useEffect(() => {
     const fetchLiveDetails = async () => {
-      if (!signer && !provider) return;
       if (!tokens.length) return;
+
+      // Build a provider or signer fallback so we can query the chain
+      let providerOrSigner = signer || provider;
+      if (!providerOrSigner && typeof window !== 'undefined' && window.ethereum) {
+        try {
+          const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+          providerOrSigner = await ethersProvider.getSigner();
+        } catch (err) {
+          console.warn('[DASHBOARD] Could not create fallback signer from window.ethereum:', err);
+        }
+      }
+
+      if (!providerOrSigner) {
+        console.warn('[DASHBOARD] No provider or signer available for fetching token details');
+        return;
+      }
+
+      console.log('[DASHBOARD] Fetching live details for tokens:', tokens.map(t => t.address));
+
+
       const details = await Promise.all(tokens.map(async (token) => {
         try {
-          const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer || provider);
-          const [name, symbol, totalSupply, balance] = await Promise.all([
-            contract.name(),
-            contract.symbol(),
-            contract.totalSupply(),
-            account ? contract.balanceOf(account) : Promise.resolve('0')
+          const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, providerOrSigner);
+          // Fetch all recommended fields in parallel
+          const [
+            name, symbol, totalSupply, balance, decimals, owner, tradingPaused, buyFee, sellFee, buyFees, sellFees,
+            platformFee, getTotalBuyFee, getTotalSellFee, maxTransactionAmount, maxWalletAmount, limitsInEffect,
+            marketingWallet, devWallet, platformWallet, factory, pancakePair, pancakeRouter, deploymentMetadata,
+            circulatingSupply, swapTokensAtAmount, tokensForMarketing, tokensForDev, tokensForLiquidity, tokensForPlatform,
+            tokensForBuyFee, tokensForSellFee, version, isFeeExempt, userIsFeeExempt
+          ] = await Promise.all([
+            contract.name().catch(() => null),
+            contract.symbol().catch(() => null),
+            contract.totalSupply().catch(() => null),
+            account ? contract.balanceOf(account).catch(() => null) : Promise.resolve('0'),
+            contract.decimals().catch(() => null),
+            contract.owner().catch(() => null),
+            contract.tradingPaused().catch(() => null),
+            contract.buyFee().catch(() => null),
+            contract.sellFee().catch(() => null),
+            contract.buyFees().catch(() => null),
+            contract.sellFees().catch(() => null),
+            contract.PLATFORM_FEE ? contract.PLATFORM_FEE().catch(() => null) : Promise.resolve(null),
+            contract.getTotalBuyFee ? contract.getTotalBuyFee().catch(() => null) : Promise.resolve(null),
+            contract.getTotalSellFee ? contract.getTotalSellFee().catch(() => null) : Promise.resolve(null),
+            contract.maxTransactionAmount().catch(() => null),
+            contract.maxWalletAmount().catch(() => null),
+            contract.limitsInEffect().catch(() => null),
+            contract.marketingWallet().catch(() => null),
+            contract.devWallet().catch(() => null),
+            contract.platformWallet().catch(() => null),
+            contract.factory().catch(() => null),
+            contract.pancakePair().catch(() => null),
+            contract.pancakeRouter().catch(() => null),
+            contract.deploymentMetadata().catch(() => null),
+            contract.getCirculatingSupply ? contract.getCirculatingSupply().catch(() => null) : Promise.resolve(null),
+            contract.swapTokensAtAmount().catch(() => null),
+            contract.tokensForMarketing().catch(() => null),
+            contract.tokensForDev().catch(() => null),
+            contract.tokensForLiquidity().catch(() => null),
+            contract.tokensForPlatform().catch(() => null),
+            contract.tokensForBuyFee().catch(() => null),
+            contract.tokensForSellFee().catch(() => null),
+            contract.VERSION ? contract.VERSION().catch(() => null) : Promise.resolve(null),
+            contract.isFeeExempt ? contract.isFeeExempt(account).catch(() => null) : Promise.resolve(null),
+            contract.isExcludedFromFees ? contract.isExcludedFromFees(account).catch(() => null) : Promise.resolve(null)
           ]);
+
+          if (!name || !symbol || !totalSupply) {
+            console.warn(`[DASHBOARD] Missing details for token ${token.address}:`, { name, symbol, totalSupply });
+            return { ...token, error: 'Could not fetch live details' };
+          }
+
+          // Normalize values to strings for display
+          const norm = (v) => (v && v.toString ? v.toString() : String(v));
+          const normStruct = (s) => (s && typeof s === 'object' ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, norm(v)])) : s);
+
           return {
             ...token,
-            name: name.toString ? name.toString() : name,
-            symbol: symbol.toString ? symbol.toString() : symbol,
-            totalSupply: totalSupply.toString ? totalSupply.toString() : String(totalSupply),
-            userBalance: balance.toString ? balance.toString() : String(balance),
+            name: norm(name),
+            symbol: norm(symbol),
+            totalSupply: norm(totalSupply),
+            userBalance: norm(balance),
+            decimals: norm(decimals),
+            owner: owner,
+            tradingPaused: tradingPaused,
+            buyFee: norm(buyFee),
+            sellFee: norm(sellFee),
+            buyFees: normStruct(buyFees),
+            sellFees: normStruct(sellFees),
+            platformFee: norm(platformFee),
+            getTotalBuyFee: norm(getTotalBuyFee),
+            getTotalSellFee: norm(getTotalSellFee),
+            maxTransactionAmount: norm(maxTransactionAmount),
+            maxWalletAmount: norm(maxWalletAmount),
+            limitsInEffect: limitsInEffect,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            platformWallet: platformWallet,
+            factory: factory,
+            pancakePair: pancakePair,
+            pancakeRouter: pancakeRouter,
+            deploymentMetadata: deploymentMetadata,
+            circulatingSupply: norm(circulatingSupply),
+            swapTokensAtAmount: norm(swapTokensAtAmount),
+            tokensForMarketing: norm(tokensForMarketing),
+            tokensForDev: norm(tokensForDev),
+            tokensForLiquidity: norm(tokensForLiquidity),
+            tokensForPlatform: norm(tokensForPlatform),
+            tokensForBuyFee: norm(tokensForBuyFee),
+            tokensForSellFee: norm(tokensForSellFee),
+            version: norm(version),
+            isFeeExempt: isFeeExempt,
+            userIsFeeExempt: userIsFeeExempt
           };
         } catch (e) {
+          console.error(`[DASHBOARD] Error fetching details for token ${token.address}:`, e);
           return { ...token, error: 'Could not fetch live details' };
         }
       }));
+
+      console.log('[DASHBOARD] Live token details:', details);
       setLiveTokenDetails(details);
     };
     fetchLiveDetails();
@@ -281,11 +455,30 @@ const Dashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent mb-4">
-            Token Dashboard
-          </h1>
-          {/* <p className="text-gray-400 text-lg">Manage and interact with your deployed tokens</p> */}
-          <p className="text-gray-400 text-lg">View your deployed tokens</p>
+          <div className="flex items-center justify-between w-full mb-1">
+            <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+              Token Dashboard
+            </h1>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-1"
+              onClick={async () => {
+                setIsLoading(true);
+                await fetchTokens();
+                setIsLoading(false);
+              }}
+              aria-label="Refresh token list"
+              title="Refresh token list"
+              disabled={isLoading}
+            >
+              <RefreshCw size={16} className={`inline-block transition-transform ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+          <div className="mt-4">
+            <p className="text-gray-400 text-lg">View your deployed tokens</p>
+          </div>
         </motion.div>
 
   {(!globalError && liveTokenDetails.length === 0) ? (
@@ -314,28 +507,55 @@ const Dashboard = () => {
                   <Coins size={24} className="text-white" />
                 </div>
               </div>
-
+              {/* Essential Fields */}
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Supply:</span>
+                  <span className="text-gray-400">Token Name:</span>
+                  <span className="text-white font-semibold">{token.name}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Symbol:</span>
+                  <span className="text-white font-mono">{token.symbol}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Total Supply:</span>
                   <span className="text-white font-mono">{token.totalSupply}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Your Balance:</span>
                   <span className="text-white font-mono">{token.userBalance}</span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Decimals:</span>
+                  <span className="text-white font-mono">{token.decimals}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Owner:</span>
+                  <span className="text-white font-mono">{token.owner?.slice(0, 6)}...{token.owner?.slice(-4)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Paused:</span>
+                  <span className={`font-mono ${token.tradingPaused ? 'text-yellow-400' : 'text-green-400'}`}>{token.tradingPaused ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Address:</span>
+                  <span className="text-white font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                </div>
                 {token.error && (
                   <div className="text-red-400 text-xs">{token.error}</div>
                 )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Address:</span>
-                  <span className="text-white font-mono">
-                    {token.address?.slice(0, 6)}...{token.address?.slice(-4)}
-                  </span>
-                </div>
               </div>
+              {/* Advanced Section (Modal) */}
+              <button
+                className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 focus:outline-none mt-2 mb-1"
+                onClick={() => setAdvancedModalToken(token)}
+                aria-label="Show Advanced"
+              >
+                <ChevronRight size={16} />
+                Show Advanced
+              </button>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2 mt-3">
                 <Button
                   size="sm"
                   variant="outline"
@@ -368,8 +588,16 @@ const Dashboard = () => {
           </motion.div>
         ))}
       </div>
+      
     )
   )}
+
+      {/* Advanced Details Modal - only one rendered, outside the map */}
+      <AdvancedTokenDetailsModal
+        token={advancedModalToken}
+        isOpen={!!advancedModalToken}
+        onClose={() => setAdvancedModalToken(null)}
+      />
 
         <Modal
           isOpen={isModalOpen}

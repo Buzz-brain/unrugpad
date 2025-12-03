@@ -40,7 +40,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
               transition={{ duration: 0.2 }}
               className={`relative w-full ${sizes[size]} bg-gray-900 rounded-2xl border border-gray-800 shadow-2xl max-h-[90vh] overflow-hidden`}
             >
-              <div className="flex items-center justify-between p-6 border-b border-gray-800">
+              <div className="flex items-center justify-between p-6 border-b border-gray-800 sticky top-0 bg-gray-900 z-20">
                 <h2 className="text-2xl font-bold text-white">{title}</h2>
                 <button
                   onClick={onClose}

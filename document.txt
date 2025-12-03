@@ -1,0 +1,90 @@
+UnrugpadToken Contract Verification & Deployment Documentation
+============================================================
+
+1. Contract Preparation
+----------------------
+- Developed `UnrugpadToken.sol` as a UUPS upgradeable BEP-20 token using OpenZeppelin upgradeable contracts.
+- Included fee logic, liquidity, and admin controls.
+- Used Hardhat for compilation and deployment.
+
+2. Compilation & Build Info
+---------------------------
+- Compiled with Solidity v0.8.24, optimization enabled (200 runs), EVM version Paris.
+- Generated build-info JSON for Standard JSON-Input verification.
+
+3. Deployment
+-------------
+- Deployed via a factory contract (`UnrugpadTokenFactory`) using the ERC1967Proxy pattern.
+- Proxy contract address created on BSC.
+- Implementation contract address stored in the proxy (EIP-1967 standard slot).
+
+4. Proxy Verification Attempt
+-----------------------------
+- Attempted to verify the proxy contract on BscScan using Standard JSON-Input.
+- Encountered bytecode mismatch (proxy only contains minimal logic).
+- Learned that only the implementation contract should be verified for full ABI/source code.
+
+5. Finding Implementation Address
+---------------------------------
+- Located the implementation contract address using BscScan's "Read Contract" tab and/or "Get Storage At" tool with slot:
+  0x360894A13BA1A3210667C828492DB98DCA3E2076CC3735A920A3CA505D382BBC
+- Confirmed implementation address: 0xce5eef386eeb576dbdd0c222e1731ca87b6ff4f5
+
+6. Implementation Contract Verification
+---------------------------------------
+- Navigated to the implementation contract address on BscScan.
+- Verified and published the source code using Standard JSON-Input (matching compiler settings).
+- BscScan automatically linked proxy to implementation, enabling full ABI and source code display.
+
+7. Confirmation & Results
+-------------------------
+- Proxy contract now shows full ABI and source code.
+- "Read as Proxy" and "Write as Proxy" tabs available.
+- Contract is publicly verified and users can interact with it.
+- Frontend and integrations can now use the ABI for token display and interaction.
+
+8. Key Learnings
+----------------
+- For upgradeable contracts, always verify the implementation contract, not the proxy.
+- Use the EIP-1967 storage slot to find the implementation address.
+- BscScan will link proxy and implementation automatically after verification.
+
+9. Useful Links
+---------------
+- BscScan Proxy Knowledge Base: https://docs.bscscan.com/smart-contracts/proxy-contracts
+- EIP-1967 Standard: https://eips.ethereum.org/EIPS/eip-1967
+
+Documented by GitHub Copilot on 2025-12-03.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Here’s what I recommend next for a robust, user-friendly dashboard:
+
+Update the dashboard to show all tokens held by the connected wallet, not just those deployed.
+
+This way, any user who receives tokens via transfer will see them in their dashboard.
+Test the transfer, approve, and balance features with multiple wallets.
+
+Send tokens to another wallet and confirm they appear in the recipient’s dashboard.
+Try approving and checking balances for different addresses.
+Add a “Refresh” or “Sync” button.
+
+Let users manually refresh their token list after receiving tokens.
+Optional: Add a “Token Search” or “Import” feature.
+
+Allow users to add tokens by contract address if they don’t show up automatically.

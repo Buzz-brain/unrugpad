@@ -102,7 +102,7 @@ const Deploy = () => {
     // Set deploymentFee to 0n (free)
     setDeploymentFee(0n);
     try {
-      const minGasBNB = 0.005; // Minimum BNB for gas (adjust as needed)
+      const minGasBNB = 0.001; // Minimum BNB for gas (adjusted)
       const userBalance = parseFloat(balance || "0");
       setInsufficientFunds(userBalance < minGasBNB);
     } catch (err) {
@@ -110,6 +110,16 @@ const Deploy = () => {
       console.error("Error checking user balance for gas:", err);
     }
   }, [isConnected, account, balance, chainId]);
+
+  // Keep ownerAddress synced to connected wallet
+  useEffect(() => {
+    if (account) {
+      setFormData((prev) => ({
+        ...prev,
+        ownerAddress: account,
+      }));
+    }
+  }, [account]);
 
   // Realtime validation for fee fields and totals
   const handleChange = (field, value) => {
@@ -214,6 +224,9 @@ const Deploy = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Debug: log the owner address used for deployment
+    console.log("Owner address for deployment:", formData.ownerAddress);
+
     if (!isConnected) {
       setGlobalError("Please connect your wallet first.");
       return;
@@ -226,7 +239,6 @@ const Deploy = () => {
 
     try {
       setIsDeploying(true);
-      // Prepare contract deployment using Factory
       if (typeof window.ethereum === "undefined") {
         openWalletModal();
         setIsDeploying(false);
@@ -234,24 +246,22 @@ const Deploy = () => {
       }
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-
+      // Log chain/network info
+      console.log("[DEPLOY] chainId:", chainId, "account:", account);
       // Fetch factory address from backend
       let factoryAddress;
       try {
-        const apiBaseUrl =
-          import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
         const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
         const data = await res.json();
         factoryAddress = data.factory;
+        console.log("[DEPLOY] Factory address:", factoryAddress);
         if (!factoryAddress) throw new Error("Factory address not found");
       } catch (err) {
-        setGlobalError(
-          "Failed to fetch factory address. Please check your backend configuration."
-        );
+        setGlobalError("Failed to fetch factory address. Please check your backend configuration.");
         setIsDeploying(false);
         return;
       }
-
       // Prepare TokenConfig struct
       const config = {
         name: formData.name,
@@ -281,29 +291,19 @@ const Deploy = () => {
           Number(formData.sellLpFee || 0),
         ].reduce((a, b) => a + b, 0),
       };
-
-      // Metadata (optional, can be empty or add more info)
+      console.log("[DEPLOY] TokenConfig:", config);
       const metadata = "";
-
-      // Instantiate factory contract
-      const factory = new ethers.Contract(
-        factoryAddress,
-        UnrugpadTokenFactoryABI.abi,
-        signer
-      );
-
+      const factory = new ethers.Contract(factoryAddress, UnrugpadTokenFactoryABI.abi, signer);
       try {
-        // Get deployment fee if required
         let deploymentFee = 0n;
         try {
           deploymentFee = await factory.deploymentFee();
         } catch {}
-
-        const tx = await factory.createToken(config, metadata, {
-          value: deploymentFee,
-        });
+        console.log("[DEPLOY] Deployment fee:", deploymentFee);
+        const tx = await factory.createToken(config, metadata, { value: deploymentFee });
+        console.log("[DEPLOY] TX:", tx);
         const receipt = await tx.wait();
-        // Find TokenCreated event
+        console.log("[DEPLOY] Receipt:", receipt);
         let newTokenAddress = null;
         for (const log of receipt.logs) {
           try {
@@ -313,6 +313,14 @@ const Deploy = () => {
               break;
             }
           } catch {}
+        }
+        console.log("[DEPLOY] New token address:", newTokenAddress);
+        // Immediately query userTokens mapping after deployment
+        try {
+          const userTokens = await factory.getUserTokens(account);
+          console.log("[DEPLOY] User tokens after deployment:", userTokens);
+        } catch (err) {
+          console.error("[DEPLOY] Error querying userTokens after deployment:", err);
         }
         if (!newTokenAddress) {
           setGlobalError("Token deployed but address not found in events.");
@@ -327,25 +335,23 @@ const Deploy = () => {
               txHash: tx.hash,
               fee: deploymentFee?.toString(),
             },
-            formData,
+            formData: {
+              ...formData,
+              buyFee: config.buyFee,
+              sellFee: config.sellFee,
+            },
           },
         });
         setGlobalError("");
       } catch (err) {
-        setGlobalError(
-          "Contract error: Failed to deploy token. Please check your network and contract configuration."
-        );
+        setGlobalError("Contract error: Failed to deploy token. Please check your network and contract configuration.");
         setIsDeploying(false);
         return;
       }
     } catch (error) {
-      console.error("Deployment error:", error);
-      // Show backend error message if available
-      const backendMsg =
-        error.response?.data?.error || error.response?.data?.message;
-      setGlobalError(
-        backendMsg || "Failed to deploy token. Please try again later."
-      );
+      console.error("[DEPLOY] Deployment error:", error);
+      const backendMsg = error.response?.data?.error || error.response?.data?.message;
+      setGlobalError(backendMsg || "Failed to deploy token. Please try again later.");
     } finally {
       setIsDeploying(false);
     }
@@ -509,11 +515,13 @@ const Deploy = () => {
               <Input
                 label="Owner Address"
                 value={formData.ownerAddress}
-                onChange={(e) => handleChange("ownerAddress", e.target.value)}
+                onChange={() => {}}
                 placeholder="0x..."
                 error={errors.ownerAddress}
                 required
                 tooltip="The address that will own and control the token"
+                readOnly
+                disabled
               />
             </div>
 

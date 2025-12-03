@@ -89,6 +89,19 @@ const DeploymentResult = () => {
     </div>
   );
 
+  // Calculate total buy and sell fee from individual fields
+  const totalBuyFee = (
+    parseFloat(form?.buyMarketingFee || 0) +
+    parseFloat(form?.buyDevFee || 0) +
+    parseFloat(form?.buyLpFee || 0)
+  ).toFixed(2);
+
+  const totalSellFee = (
+    parseFloat(form?.sellMarketingFee || 0) +
+    parseFloat(form?.sellDevFee || 0) +
+    parseFloat(form?.sellLpFee || 0)
+  ).toFixed(2);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 pt-32 pb-20">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
@@ -115,7 +128,6 @@ const DeploymentResult = () => {
           </p>
         </motion.div>
 
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <Card glow>
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -131,17 +143,24 @@ const DeploymentResult = () => {
               {deployment?.txHash && (
                 <InfoRow label="Transaction Hash" value={deployment.txHash} copyable />
               )}
-              {deployment?.fee && (
-                <InfoRow label="Deployment Fee" value={deployment.fee} />
-              )}
+              <InfoRow
+                label="Deployment Fee"
+                value={
+                  deployment?.fee === undefined || deployment?.fee === null
+                    ? "N/A"
+                    : deployment?.fee === "0" || deployment?.fee === 0 || deployment?.fee === "0n"
+                    ? "0 BNB"
+                    : `${deployment.fee} BNB`
+                }
+              />
             </div>
           </Card>
 
           <Card glow>
             <h2 className="text-xl font-bold text-white mb-4">Fee Configuration</h2>
             <div>
-              <InfoRow label="Buy Fee" value={`${form?.buyFee || 0}%`} />
-              <InfoRow label="Sell Fee" value={`${form?.sellFee || 0}%`} />
+              <InfoRow label="Buy Fee" value={`${totalBuyFee}%`} />
+              <InfoRow label="Sell Fee" value={`${totalSellFee}%`} />
               <InfoRow label="Owner" value={form?.ownerAddress || "N/A"} copyable />
               {form?.marketingWallet && (
                 <InfoRow label="Marketing Wallet" value={form.marketingWallet} copyable />
@@ -176,7 +195,7 @@ const DeploymentResult = () => {
                 <ExternalLink size={18} />
                 View on Explorer
               </Button>
-              <Button onClick={() => navigate("/dashboard")}>
+              <Button onClick={() => navigate("/dashboard")}> 
                 Go to Dashboard
               </Button>
             </div>

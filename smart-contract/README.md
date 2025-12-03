@@ -62,3 +62,61 @@ npx hardhat --init
 npx hardhat node
 RPC_URL=http://127.0.0.1:8545
 PRIVATE_KEY=<paste one of the Hardhat accounts>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Here’s a checklist of the client’s complaints, with resolution status and notes:
+
+1. DeploymentResult.jsx: Buy/Sell Fee % Shows 0%
+Client Input: Buy fees: 2% (marketing), 1% (dev), 1% (lp); Sell fees: 10% (marketing), 10% (dev), 10% (lp).
+Issue: Deployment result page shows 0% for both buy and sell fee.
+Status: ❌ Not resolved.
+Action Needed: Review how buy/sell fee values are passed and displayed in DeploymentResult.jsx. Ensure correct calculation and rendering.
+2. Token Not Showing in Dashboard After Deployment
+Issue: Token deployed successfully but does not appear in dashboard.
+Status: ❌ Not resolved.
+Action Needed: Confirm dashboard fetches tokens using the correct wallet address and refreshes after deployment. Also, ensure smart contract mapping (userTokens) is updated.
+3. Contract Not Auto-Verified After Deployment
+Issue: Contract is not verified on BscScan/token sniffer.
+Status: ❌ Not resolved.
+Action Needed: Implement contract verification step after deployment (e.g., using BscScan API).
+4. Tax (Buy/Sell Fee) Not Matching Client Expectation
+Client Expectation: Buy tax = 0.3%, Sell tax = 0.3%.
+Issue: Token sniffer shows Buy: 0.4%, Sell: 0.9%.
+Status: ❌ Not resolved.
+Action Needed: Double-check fee configuration in deployment form and contract logic. Ensure platform fee (0.3%) is correctly set and not added to user-configured fees.
+5. Other Observations (LP Ratio, Holders, Liquidity, etc.)
+Status: Informational.
+Note: Most of these are blockchain stats, not directly controlled by the dApp, except for LP lock (could add LP lock feature in future).
