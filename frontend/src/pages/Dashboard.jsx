@@ -438,7 +438,11 @@ const Dashboard = () => {
           <h2 className="text-2xl font-bold text-red-400 mb-4">Error</h2>
           <p className="text-gray-300 mb-6">{globalError}</p>
           <div className="flex justify-center mt-4">
-            <Button variant="danger" onClick={() => window.location.reload()}>
+            <Button variant="danger" onClick={async () => {
+              setIsLoading(true);
+              await fetchTokens();
+              setIsLoading(false);
+            }}>
               Retry
             </Button>
           </div>
@@ -554,7 +558,7 @@ const Dashboard = () => {
                 <ChevronRight size={16} />
                 Show Advanced
               </button>
-
+{/* 
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <Button
                   size="sm"
@@ -583,7 +587,7 @@ const Dashboard = () => {
                   <Eye size={14} />
                   Balance
                 </Button>
-              </div>
+              </div> */}
             </Card>
           </motion.div>
         ))}

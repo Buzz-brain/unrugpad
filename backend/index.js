@@ -4,6 +4,7 @@ const fs = require("fs");
 const cors = require("cors");
 
 require("dotenv").config({ path: path.join(__dirname, ".env") });
+const { spawn } = require('child_process');
 
 const app = express();
 app.use(cors());
@@ -27,6 +28,56 @@ app.get("/deployed_addresses.json", (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: "Failed to read deployed addresses" });
   }
+});
+
+// POST /api/verify-proxy
+// Body: { proxyAddress: string, constructorArgs: array, network: string }
+app.post('/api/verify-proxy', (req, res) => {
+  const { proxyAddress, constructorArgs = [], network = 'bsc' } = req.body;
+  if (!proxyAddress) {
+    return res.status(400).json({ error: 'proxyAddress required' });
+  }
+  // Ensure all constructor arguments are strings (serialize objects/arrays)
+  const serializedConstructorArgs = constructorArgs.map(a => typeof a === 'string' ? a : JSON.stringify(a));
+
+  // Use `--` so arguments after it are passed to the script (not to Hardhat)
+  // Place --network before the script so Hardhat consumes it and the `--` correctly passes
+  // remaining args to the script.
+  const args = [
+    'run',
+    '--network',
+    network,
+    '../backend/verifyProxy.js',
+    '--',
+    proxyAddress,
+    ...serializedConstructorArgs
+  ];
+  const path = require('path');
+  // Instead of calling `npx hardhat run` (CLI arg forwarding issues), spawn `node` directly
+  // and set HARDHAT_NETWORK so the script can use Hardhat's runtime in the correct network.
+  // Run the verification script inside the smart-contract project so `require('hardhat')` resolves.
+  // Use npx hardhat run --network <network> scripts/verifyProxy.js -- <proxy> <args...>
+  const hardhatArgs = [
+    'hardhat',
+    'run',
+    '--network',
+    network,
+    'scripts/verifyProxy.js',
+    '--',
+    proxyAddress,
+    ...serializedConstructorArgs
+  ];
+
+  const child = spawn('npx', hardhatArgs, {
+    shell: true,
+    cwd: path.resolve(__dirname, '../smart-contract')
+  });
+  let output = '';
+  child.stdout.on('data', (data) => { output += data.toString(); });
+  child.stderr.on('data', (data) => { output += data.toString(); });
+  child.on('close', (code) => {
+    res.json({ code, output });
+  });
 });
 
 // Return token ABI/artifact if available (useful for front-end)
