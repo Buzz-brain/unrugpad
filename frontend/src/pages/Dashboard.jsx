@@ -182,7 +182,10 @@ const Dashboard = () => {
 
       console.log('[DASHBOARD] Fetching live details for tokens:', tokens.map(t => t.address));
 
+      // Use API base from env to contact backend rather than the Vite dev server
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
+      // Fetch verification status for each token from backend
       const details = await Promise.all(tokens.map(async (token) => {
         try {
           const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, providerOrSigner);
@@ -231,9 +234,23 @@ const Dashboard = () => {
             contract.isExcludedFromFees ? contract.isExcludedFromFees(account).catch(() => null) : Promise.resolve(null)
           ]);
 
+          // Fetch verification status from backend
+          let verifyStatus = 'unknown';
+          let verifyExplorer = null;
+          try {
+            const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${token.address}`);
+            if (resp.ok) {
+              const data = await resp.json();
+              verifyStatus = data.status || 'unknown';
+              verifyExplorer = data.explorer || null;
+            }
+          } catch (e) {
+            // ignore, fallback to unknown
+          }
+
           if (!name || !symbol || !totalSupply) {
             console.warn(`[DASHBOARD] Missing details for token ${token.address}:`, { name, symbol, totalSupply });
-            return { ...token, error: 'Could not fetch live details' };
+            return { ...token, error: 'Could not fetch live details', verifyStatus, verifyExplorer };
           }
 
           // Normalize values to strings for display
@@ -276,11 +293,13 @@ const Dashboard = () => {
             tokensForSellFee: norm(tokensForSellFee),
             version: norm(version),
             isFeeExempt: isFeeExempt,
-            userIsFeeExempt: userIsFeeExempt
+            userIsFeeExempt: userIsFeeExempt,
+            verifyStatus,
+            verifyExplorer
           };
         } catch (e) {
           console.error(`[DASHBOARD] Error fetching details for token ${token.address}:`, e);
-          return { ...token, error: 'Could not fetch live details' };
+          return { ...token, error: 'Could not fetch live details', verifyStatus: 'unknown', verifyExplorer: null };
         }
       }));
 
@@ -544,6 +563,30 @@ const Dashboard = () => {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Address:</span>
                   <span className="text-white font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                </div>
+                {/* Verification Status Row */}
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-400">Verification:</span>
+                  <span className="flex items-center gap-2">
+                    {token.verifyStatus === 'pending' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full animate-pulse bg-yellow-400" /> Pending</span>
+                    )}
+                    {token.verifyStatus === 'ok' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
+                    )}
+                    {token.verifyStatus === 'already_verified' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-400" /> Already Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
+                    )}
+                    {token.verifyStatus === 'api_key_missing' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> API Key Missing</span>
+                    )}
+                    {token.verifyStatus === 'failed' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> Failed</span>
+                    )}
+                    {token.verifyStatus === 'unknown' && (
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-500" /> Unknown</span>
+                    )}
+                  </span>
                 </div>
                 {token.error && (
                   <div className="text-red-400 text-xs">{token.error}</div>

@@ -49,12 +49,77 @@ const DeploymentResult = () => {
   const explorerBase = explorerUrls[network] || explorerUrls['sepolia'];
 
   const [globalError, setGlobalError] = useState('');
+  const [verifyStatus, setVerifyStatus] = useState('idle'); // idle, pending, ok, already_verified, api_key_missing, failed
+  const [verifyOutput, setVerifyOutput] = useState('');
+  const [verifyExplorer, setVerifyExplorer] = useState(null);
 
   useEffect(() => {
     if (!location.state?.deployment) {
       setGlobalError('Deployment result not found. Please deploy a token first.');
     }
   }, [location]);
+
+  // Auto-trigger verification after deployment
+  useEffect(() => {
+    let cancelled = false;
+    async function runVerification() {
+      if (!deployment || !deployment.address) return;
+      try {
+        setVerifyStatus('pending');
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+        const body = {
+          proxyAddress: deployment.address,
+          constructorArgs: form?.constructorArgs || [],
+          network: 'bsc'
+        };
+
+        const resp = await fetch(`${apiBaseUrl}/api/verify-proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        const data = await resp.json();
+        if (cancelled) return;
+
+        setVerifyOutput(data.output || JSON.stringify(data));
+        if (resp.ok) {
+          if (data.status === 'already_verified') {
+            setVerifyStatus('already_verified');
+            setVerifyExplorer(data.explorer || null);
+            toast.info('Contract already verified on BscScan');
+          } else if (data.status === 'ok') {
+            setVerifyStatus('ok');
+            setVerifyExplorer(data.explorer || null);
+            toast.success('Verification submitted successfully');
+          } else {
+            setVerifyStatus('failed');
+            toast.error('Verification returned unexpected status');
+          }
+        } else {
+          if (data.status === 'api_key_missing') {
+            setVerifyStatus('api_key_missing');
+            toast.error('BscScan API key missing on server');
+          } else if (data.status === 'already_verified') {
+            setVerifyStatus('already_verified');
+            setVerifyExplorer(data.explorer || null);
+            toast.info('Contract already verified on BscScan');
+          } else {
+            setVerifyStatus('failed');
+            toast.error('Verification failed — see logs');
+          }
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setVerifyStatus('failed');
+        setVerifyOutput(String(e));
+        toast.error('Verification request failed');
+      }
+    }
+
+    runVerification();
+    return () => { cancelled = true; };
+  }, [deployment]);
 
   if (globalError) {
     return (
@@ -198,6 +263,55 @@ const DeploymentResult = () => {
               <Button onClick={() => navigate("/dashboard")}> 
                 Go to Dashboard
               </Button>
+            </div>
+          </div>
+
+          {/* Verification Status */}
+          <div className="mt-6">
+            <h4 className="text-lg font-semibold text-white mb-2">Verification Status</h4>
+            <div className="text-sm text-gray-300">
+              {verifyStatus === 'pending' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full animate-pulse bg-yellow-400" />
+                  <span>Verification in progress — submitting to BscScan...</span>
+                </div>
+              )}
+              {verifyStatus === 'ok' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-green-400" />
+                  <span>Verification submitted successfully.</span>
+                  {verifyExplorer && (
+                    <button className="ml-3 text-cyan-300 underline" onClick={() => window.open(verifyExplorer, '_blank')}>Open on BscScan</button>
+                  )}
+                </div>
+              )}
+              {verifyStatus === 'already_verified' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-blue-400" />
+                  <span>Contract already verified on BscScan.</span>
+                  {verifyExplorer && (
+                    <button className="ml-3 text-cyan-300 underline" onClick={() => window.open(verifyExplorer, '_blank')}>Open on BscScan</button>
+                  )}
+                </div>
+              )}
+              {verifyStatus === 'api_key_missing' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-red-500" />
+                  <span>BscScan API key missing on server. Verification cannot proceed.</span>
+                </div>
+              )}
+              {verifyStatus === 'failed' && (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-red-500" />
+                    <span>Verification failed. See logs below.</span>
+                  </div>
+                  <pre className="max-h-48 overflow-auto mt-2 text-xs bg-black/30 p-2 rounded">{verifyOutput}</pre>
+                </div>
+              )}
+              {verifyStatus === 'idle' && (
+                <div className="text-gray-400">Queued for verification.</div>
+              )}
             </div>
           </div>
         </Card>
