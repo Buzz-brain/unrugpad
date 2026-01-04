@@ -40,44 +40,99 @@ app.post('/api/verify-proxy', (req, res) => {
   // Ensure all constructor arguments are strings (serialize objects/arrays)
   const serializedConstructorArgs = constructorArgs.map(a => typeof a === 'string' ? a : JSON.stringify(a));
 
-  // Use `--` so arguments after it are passed to the script (not to Hardhat)
-  // Place --network before the script so Hardhat consumes it and the `--` correctly passes
-  // remaining args to the script.
-  const args = [
-    'run',
-    '--network',
-    network,
-    '../backend/verifyProxy.js',
-    '--',
-    proxyAddress,
-    ...serializedConstructorArgs
-  ];
+  // Instead of relying on a custom Hardhat task (which may not be loaded),
+  // fetch the implementation address here via JSON-RPC then call Hardhat's
+  // built-in `verify` task to verify the implementation contract.
   const path = require('path');
-  // Instead of calling `npx hardhat run` (CLI arg forwarding issues), spawn `node` directly
-  // and set HARDHAT_NETWORK so the script can use Hardhat's runtime in the correct network.
-  // Run the verification script inside the smart-contract project so `require('hardhat')` resolves.
-  // Use npx hardhat run --network <network> scripts/verifyProxy.js -- <proxy> <args...>
-  const hardhatArgs = [
-    'hardhat',
-    'run',
-    '--network',
-    network,
-    'scripts/verifyProxy.js',
-    '--',
-    proxyAddress,
-    ...serializedConstructorArgs
-  ];
 
-  const child = spawn('npx', hardhatArgs, {
-    shell: true,
-    cwd: path.resolve(__dirname, '../smart-contract')
+  // Load smart-contract .env
+  const smartEnvPath = path.resolve(__dirname, '../smart-contract/.env');
+  let smartEnv = {};
+  try {
+    if (fs.existsSync(smartEnvPath)) {
+      const envFile = fs.readFileSync(smartEnvPath);
+      smartEnv = require('dotenv').parse(envFile);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const rpcUrl = smartEnv.BSC_RPC_URL || process.env.BSC_RPC_URL;
+  if (!rpcUrl) return res.status(500).json({ error: 'BSC_RPC_URL not configured' });
+
+  const https = require('https');
+  const rpcPayload = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getStorageAt', params: [proxyAddress, '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', 'latest'] });
+
+  const url = new URL(rpcUrl);
+  const rpcOptions = {
+    hostname: url.hostname,
+    path: url.pathname + (url.search || ''),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(rpcPayload) }
+  };
+
+  const rpcReq = https.request(rpcOptions, (rpcRes) => {
+    let body = '';
+    rpcRes.on('data', (chunk) => body += chunk.toString());
+    rpcRes.on('end', () => {
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed.error) return res.status(500).json({ error: parsed.error });
+        const implStorage = parsed.result;
+        const implementation = '0x' + implStorage.slice(-40);
+
+        // Build Hardhat verify command
+        // Pass env vars to the child process so hardhat .env is properly loaded
+        const childEnv = { ...process.env, ...smartEnv };
+        const runArgs = [
+          'hardhat', 'verify', '--network', network,
+          '--contract', 'contracts/UnrugpadToken.sol:UnrugpadToken',
+          implementation,
+          ...serializedConstructorArgs
+        ];
+
+        const child = spawn('npx', runArgs, { shell: true, cwd: path.resolve(__dirname, '../smart-contract'), env: childEnv });
+        let output = '';
+        child.stdout.on('data', (data) => { output += data.toString(); });
+        child.stderr.on('data', (data) => { output += data.toString(); });
+        child.on('close', (code) => {
+          // Normalize output for simple parsing
+          const norm = output.replace(/\r/g, '\n');
+
+          // Detect common outcomes
+          const alreadyVerified = /has already been verified on/i.test(norm) || /already verified/i.test(norm);
+          const apiKeyEmpty = /BscScan API key is empty|EXPLORER_API_KEY_EMPTY|HHE80029/i.test(norm);
+
+          // Try to extract an explorer link (BscScan or generic link printed by Hardhat)
+          let explorer = null;
+          const explMatch = norm.match(/(https?:\/\/[^\s]+bscscan\.com\/address\/0x[0-9a-fA-F]{40}[^\s]*)/i) || norm.match(/Explorer:\s*(https?:\/\/\S+)/i);
+          if (explMatch) explorer = explMatch[1];
+
+          if (alreadyVerified) {
+            return res.json({ code, status: 'already_verified', explorer, output: norm });
+          }
+
+          if (apiKeyEmpty) {
+            return res.status(500).json({ code, status: 'api_key_missing', message: 'BscScan API key missing or empty in Hardhat config/environment', output: norm });
+          }
+
+          if (code !== 0) {
+            return res.status(500).json({ code, status: 'failed', output: norm });
+          }
+
+          return res.json({ code, status: 'ok', explorer, output: norm });
+        });
+      } catch (e) {
+        return res.status(500).json({ error: 'Failed to parse RPC response', details: body });
+      }
+    });
   });
-  let output = '';
-  child.stdout.on('data', (data) => { output += data.toString(); });
-  child.stderr.on('data', (data) => { output += data.toString(); });
-  child.on('close', (code) => {
-    res.json({ code, output });
+
+  rpcReq.on('error', (err) => {
+    return res.status(500).json({ error: 'RPC request failed', details: err.message });
   });
+  rpcReq.write(rpcPayload);
+  rpcReq.end();
 });
 
 // Return token ABI/artifact if available (useful for front-end)
@@ -95,6 +150,63 @@ app.get("/artifacts/UnrugpadToken.json", (req, res) => {
 // Interact endpoint disabled on server for security (use MetaMask / client-side signing)
 app.post("/interact", (req, res) => {
   return res.status(403).json({ error: "Server-side interactions disabled. Use MetaMask in the browser." });
+});
+
+// GET /api/verify-proxy/status?proxyAddress=0x...
+// Returns verification status and explorer link for a contract
+app.get('/api/verify-proxy/status', async (req, res) => {
+  const proxyAddress = req.query.proxyAddress;
+  if (!proxyAddress) {
+    return res.status(400).json({ error: 'proxyAddress required' });
+  }
+
+  // Load BscScan API key from smart-contract/.env or process.env
+  const path = require('path');
+  const smartEnvPath = path.resolve(__dirname, '../smart-contract/.env');
+  let smartEnv = {};
+  try {
+    if (fs.existsSync(smartEnvPath)) {
+      const envFile = fs.readFileSync(smartEnvPath);
+      smartEnv = require('dotenv').parse(envFile);
+    }
+  } catch (e) {
+    // ignore
+  }
+  const apiKey = smartEnv.BSCSCAN_API_KEY || process.env.BSCSCAN_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ status: 'api_key_missing', message: 'BscScan API key missing or empty in Hardhat config/environment' });
+  }
+
+  // Query BscScan API for contract verification status
+  const url = `https://api.bscscan.com/api?module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
+  try {
+    const https = require('https');
+    https.get(url, (apiRes) => {
+      let body = '';
+      apiRes.on('data', (chunk) => body += chunk.toString());
+      apiRes.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (!parsed.result || !Array.isArray(parsed.result) || parsed.result.length === 0) {
+            return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}` });
+          }
+          const result = parsed.result[0];
+          // If SourceCode is non-empty, contract is verified
+          if (result.SourceCode && result.SourceCode.length > 0) {
+            return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
+          } else {
+            return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}` });
+          }
+        } catch (e) {
+          return res.status(500).json({ status: 'failed', error: 'Failed to parse BscScan response', details: body });
+        }
+      });
+    }).on('error', (err) => {
+      return res.status(500).json({ status: 'failed', error: 'BscScan API request failed', details: err.message });
+    });
+  } catch (e) {
+    return res.status(500).json({ status: 'failed', error: 'Internal server error', details: String(e) });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

@@ -1,3 +1,8 @@
+// Archived copy of backend/verifyProxy.js
+// Original contents archived because verification logic has been centralized
+// in smart-contract/scripts/verifyProxy.js and smart-contract/tasks/verifyProxy.js
+
+// --- Original file content starts below ---
 // backend/verifyProxy.js
 // Usage: node backend/verifyProxy.js <proxyAddress> <arg1> <arg2> ...
 
