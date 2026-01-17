@@ -177,7 +177,8 @@ app.get('/api/verify-proxy/status', async (req, res) => {
 
   // If API key is available, use BscScan API (preferred)
   if (apiKey) {
-    const url = `https://api.bscscan.com/api?module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
+    // Use Etherscan V2 API for contract source code verification
+    const url = `https://api.etherscan.io/v2/api?chainid=56&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
     try {
       https.get(url, (apiRes) => {
         let body = '';
@@ -185,23 +186,23 @@ app.get('/api/verify-proxy/status', async (req, res) => {
         apiRes.on('end', () => {
           try {
             const parsed = JSON.parse(body);
-            if (!parsed.result || !Array.isArray(parsed.result) || parsed.result.length === 0) {
-              console.error('[BscScan API] Unexpected result:', body);
-              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'BscScan API returned no result', raw: body });
+            // V2 format: { status, message, result: { SourceCode, ... } }
+            if (!parsed.result || !parsed.result.SourceCode) {
+              console.error('[Etherscan V2 API] Unexpected result:', body);
+              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'Etherscan V2 API returned no result', raw: body });
             }
-            const result = parsed.result[0];
-            if (result.SourceCode && result.SourceCode.length > 0) {
+            if (parsed.result.SourceCode && parsed.result.SourceCode.length > 0) {
               return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
             } else {
-              console.warn('[BscScan API] Contract not verified. API result:', body);
+              console.warn('[Etherscan V2 API] Contract not verified. API result:', body);
               return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'Contract not verified on BscScan', raw: body });
             }
           } catch (e) {
-            return res.status(500).json({ status: 'failed', error: 'Failed to parse BscScan response', details: body });
+            return res.status(500).json({ status: 'failed', error: 'Failed to parse Etherscan V2 response', details: body });
           }
         });
       }).on('error', (err) => {
-        return res.status(500).json({ status: 'failed', error: 'BscScan API request failed', details: err.message });
+        return res.status(500).json({ status: 'failed', error: 'Etherscan V2 API request failed', details: err.message });
       });
     } catch (e) {
       return res.status(500).json({ status: 'failed', error: 'Internal server error', details: String(e) });
