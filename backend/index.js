@@ -173,36 +173,64 @@ app.get('/api/verify-proxy/status', async (req, res) => {
     // ignore
   }
   const apiKey = smartEnv.BSCSCAN_API_KEY || process.env.BSCSCAN_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ status: 'api_key_missing', message: 'BscScan API key missing or empty in Hardhat config/environment' });
+  const https = require('https');
+
+  // If API key is available, use BscScan API (preferred)
+  if (apiKey) {
+    const url = `https://api.bscscan.com/api?module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
+    try {
+      https.get(url, (apiRes) => {
+        let body = '';
+        apiRes.on('data', (chunk) => body += chunk.toString());
+        apiRes.on('end', () => {
+          try {
+            const parsed = JSON.parse(body);
+            if (!parsed.result || !Array.isArray(parsed.result) || parsed.result.length === 0) {
+              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}` });
+            }
+            const result = parsed.result[0];
+            if (result.SourceCode && result.SourceCode.length > 0) {
+              return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
+            } else {
+              return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}` });
+            }
+          } catch (e) {
+            return res.status(500).json({ status: 'failed', error: 'Failed to parse BscScan response', details: body });
+          }
+        });
+      }).on('error', (err) => {
+        return res.status(500).json({ status: 'failed', error: 'BscScan API request failed', details: err.message });
+      });
+    } catch (e) {
+      return res.status(500).json({ status: 'failed', error: 'Internal server error', details: String(e) });
+    }
+    return;
   }
 
-  // Query BscScan API for contract verification status
-  const url = `https://api.bscscan.com/api?module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
+  // No API key: fall back to scraping the BscScan public address page for verification indicators
+  const pageUrl = `https://bscscan.com/address/${proxyAddress}#code`;
   try {
-    const https = require('https');
-    https.get(url, (apiRes) => {
-      let body = '';
-      apiRes.on('data', (chunk) => body += chunk.toString());
-      apiRes.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          if (!parsed.result || !Array.isArray(parsed.result) || parsed.result.length === 0) {
-            return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}` });
-          }
-          const result = parsed.result[0];
-          // If SourceCode is non-empty, contract is verified
-          if (result.SourceCode && result.SourceCode.length > 0) {
-            return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
-          } else {
-            return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}` });
-          }
-        } catch (e) {
-          return res.status(500).json({ status: 'failed', error: 'Failed to parse BscScan response', details: body });
+    https.get(pageUrl, (pageRes) => {
+      let html = '';
+      pageRes.on('data', (chunk) => html += chunk.toString());
+      pageRes.on('end', () => {
+        // Heuristics: look for evidence of verified source code or 'Sorry, We are unable to locate this Contract.'
+        const verifiedMarker = /Contract Source Code Verified|Verified Source Code|<span[^>]*>Verified<\/span>/i;
+        const notFoundMarker = /Unable to locate this Contract|Sorry, We are unable to locate this Contract/i;
+        if (verifiedMarker.test(html)) {
+          return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code`, note: 'detected via HTML fallback (no API key)'});
         }
+        if (notFoundMarker.test(html)) {
+          return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}` });
+        }
+        // If neither marker is decisive, try to detect presence of a 'Source Code' section
+        if (/Source Code for Contract/i.test(html) || /<div[^>]+id="verifiedbytecode"/i.test(html) || /SourceCode/i.test(html)) {
+          return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code`, note: 'detected via HTML fallback (no API key)'});
+        }
+        return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}` });
       });
     }).on('error', (err) => {
-      return res.status(500).json({ status: 'failed', error: 'BscScan API request failed', details: err.message });
+      return res.status(500).json({ status: 'failed', error: 'BscScan page request failed', details: err.message });
     });
   } catch (e) {
     return res.status(500).json({ status: 'failed', error: 'Internal server error', details: String(e) });
