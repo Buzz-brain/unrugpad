@@ -307,6 +307,28 @@ const Dashboard = () => {
       setLiveTokenDetails(details);
     };
     fetchLiveDetails();
+    // Set up periodic verification refresh for tokens
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const interval = setInterval(async () => {
+      if (!details || details.length === 0) return;
+      try {
+        const refreshed = await Promise.all(details.map(async (t) => {
+          try {
+            const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${t.address}`);
+            if (!resp.ok) return t;
+            const d = await resp.json();
+            return { ...t, verifyStatus: d.status || t.verifyStatus, verifyExplorer: d.explorer || t.verifyExplorer };
+          } catch (e) {
+            return t;
+          }
+        }));
+        setLiveTokenDetails(refreshed);
+      } catch (e) {
+        // ignore periodic errors
+      }
+    }, 60000); // every 60s
+
+    return () => clearInterval(interval);
   }, [tokens, signer, provider, account]);
 
   const openModal = (type, token) => {

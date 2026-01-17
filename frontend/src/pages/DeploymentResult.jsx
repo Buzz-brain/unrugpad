@@ -52,6 +52,8 @@ const DeploymentResult = () => {
   const [verifyStatus, setVerifyStatus] = useState('idle'); // idle, pending, ok, already_verified, api_key_missing, failed
   const [verifyOutput, setVerifyOutput] = useState('');
   const [verifyExplorer, setVerifyExplorer] = useState(null);
+  const [verifyPolling, setVerifyPolling] = useState(false);
+  const verifyPollIntervalRef = { current: null };
 
   useEffect(() => {
     if (!location.state?.deployment) {
@@ -118,7 +120,45 @@ const DeploymentResult = () => {
     }
 
     runVerification();
-    return () => { cancelled = true; };
+
+    // Start polling verification status via backend GET endpoint until verified
+    const startPolling = () => {
+      if (!deployment || !deployment.address) return;
+      setVerifyPolling(true);
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+      verifyPollIntervalRef.current = setInterval(async () => {
+        try {
+          const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${deployment.address}`);
+          const data = await resp.json();
+          if (data.status === 'already_verified' || data.status === 'ok') {
+            setVerifyStatus('already_verified');
+            setVerifyExplorer(data.explorer || null);
+            setVerifyOutput(JSON.stringify(data));
+            toast.info('Contract verified on BscScan');
+            // stop polling
+            clearInterval(verifyPollIntervalRef.current);
+            verifyPollIntervalRef.current = null;
+            setVerifyPolling(false);
+          } else if (data.status) {
+            // update intermediate statuses
+            setVerifyStatus(data.status);
+            setVerifyOutput(JSON.stringify(data));
+          }
+        } catch (e) {
+          // ignore transient errors
+        }
+      }, 15000); // poll every 15s
+    };
+
+    startPolling();
+
+    return () => {
+      cancelled = true;
+      if (verifyPollIntervalRef.current) {
+        clearInterval(verifyPollIntervalRef.current);
+        verifyPollIntervalRef.current = null;
+      }
+    };
   }, [deployment]);
 
   if (globalError) {
