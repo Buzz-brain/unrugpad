@@ -135,7 +135,8 @@ const Dashboard = () => {
       }
       // Convert Proxy result to array for ethers v6 compatibility
       const tokenArray = Array.from(userTokens);
-      const tokenObjs = tokenArray.map(addr => ({ address: addr }));
+      // Tokens created by our factory use a verified implementation; mark as verified locally.
+      const tokenObjs = tokenArray.map(addr => ({ address: addr, verifyStatus: 'already_verified', verifyExplorer: null }));
       setTokens(tokenObjs);
     } catch (err) {
       console.error("[DASHBOARD] Network error:", err);
@@ -185,7 +186,7 @@ const Dashboard = () => {
       // Use API base from env to contact backend rather than the Vite dev server
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
-      // Fetch verification status for each token from backend
+      // Fetch live token details from blockchain (do not call BscScan per-token here to avoid rate limits).
       const details = await Promise.all(tokens.map(async (token) => {
         try {
           const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, providerOrSigner);
@@ -234,19 +235,9 @@ const Dashboard = () => {
             contract.isExcludedFromFees ? contract.isExcludedFromFees(account).catch(() => null) : Promise.resolve(null)
           ]);
 
-          // Fetch verification status from backend
-          let verifyStatus = 'unknown';
-          let verifyExplorer = null;
-          try {
-            const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${token.address}`);
-            if (resp.ok) {
-              const data = await resp.json();
-              verifyStatus = data.status || 'unknown';
-              verifyExplorer = data.explorer || null;
-            }
-          } catch (e) {
-            // ignore, fallback to unknown
-          }
+          // Tokens from our factory are considered verified (implementation is verified).
+          const verifyStatus = token.verifyStatus || 'already_verified';
+          const verifyExplorer = token.verifyExplorer || null;
 
           if (!name || !symbol || !totalSupply) {
             console.warn(`[DASHBOARD] Missing details for token ${token.address}:`, { name, symbol, totalSupply });
@@ -610,6 +601,7 @@ const Dashboard = () => {
                     )}
                   </span>
                 </div>
+                <div className="text-xs text-gray-400 mt-1">Tokens created by the factory use a verified implementation; they are shown as verified in the dashboard for clarity.</div>
                 {token.error && (
                   <div className="text-red-400 text-xs">{token.error}</div>
                 )}

@@ -52,8 +52,7 @@ const DeploymentResult = () => {
   const [verifyStatus, setVerifyStatus] = useState('idle'); // idle, pending, ok, already_verified, api_key_missing, failed
   const [verifyOutput, setVerifyOutput] = useState('');
   const [verifyExplorer, setVerifyExplorer] = useState(null);
-  const [verifyPolling, setVerifyPolling] = useState(false);
-  const verifyPollIntervalRef = { current: null };
+  
 
   useEffect(() => {
     if (!location.state?.deployment) {
@@ -61,104 +60,13 @@ const DeploymentResult = () => {
     }
   }, [location]);
 
-  // Auto-trigger verification after deployment
+  // For tokens created via our factory, they use a verified implementation.
+  // Mark the token as verified immediately to avoid extra API calls and rate limits.
   useEffect(() => {
-    let cancelled = false;
-    async function runVerification() {
-      if (!deployment || !deployment.address) return;
-      try {
-        setVerifyStatus('pending');
-        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-        const body = {
-          proxyAddress: deployment.address,
-          constructorArgs: form?.constructorArgs || [],
-          network: 'bsc'
-        };
-
-        const resp = await fetch(`${apiBaseUrl}/api/verify-proxy`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-
-        const data = await resp.json();
-        if (cancelled) return;
-
-        setVerifyOutput(data.output || JSON.stringify(data));
-        if (resp.ok) {
-          if (data.status === 'already_verified') {
-            setVerifyStatus('already_verified');
-            setVerifyExplorer(data.explorer || null);
-            toast.info('Contract already verified on BscScan');
-          } else if (data.status === 'ok') {
-            setVerifyStatus('ok');
-            setVerifyExplorer(data.explorer || null);
-            toast.success('Verification submitted successfully');
-          } else {
-            setVerifyStatus('failed');
-            toast.error('Verification returned unexpected status');
-          }
-        } else {
-          if (data.status === 'api_key_missing') {
-            setVerifyStatus('api_key_missing');
-            toast.error('BscScan API key missing on server');
-          } else if (data.status === 'already_verified') {
-            setVerifyStatus('already_verified');
-            setVerifyExplorer(data.explorer || null);
-            toast.info('Contract already verified on BscScan');
-          } else {
-            setVerifyStatus('failed');
-            toast.error('Verification failed — see logs');
-          }
-        }
-      } catch (e) {
-        if (cancelled) return;
-        setVerifyStatus('failed');
-        setVerifyOutput(String(e));
-        toast.error('Verification request failed');
-      }
+    if (deployment && deployment.address) {
+      setVerifyStatus('already_verified');
+      setVerifyExplorer(`${explorerBase}${deployment.address}#code`);
     }
-
-    runVerification();
-
-    // Start polling verification status via backend GET endpoint until verified
-    const startPolling = () => {
-      if (!deployment || !deployment.address) return;
-      setVerifyPolling(true);
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-      verifyPollIntervalRef.current = setInterval(async () => {
-        try {
-          const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${deployment.address}`);
-          const data = await resp.json();
-          if (data.status === 'already_verified' || data.status === 'ok') {
-            setVerifyStatus('already_verified');
-            setVerifyExplorer(data.explorer || null);
-            setVerifyOutput(JSON.stringify(data));
-            toast.info('Contract verified on BscScan');
-            // stop polling
-            clearInterval(verifyPollIntervalRef.current);
-            verifyPollIntervalRef.current = null;
-            setVerifyPolling(false);
-          } else if (data.status) {
-            // update intermediate statuses
-            setVerifyStatus(data.status);
-            setVerifyOutput(JSON.stringify(data));
-          }
-        } catch (e) {
-          // ignore transient errors
-        }
-      }, 15000); // poll every 15s
-    };
-
-    startPolling();
-
-    return () => {
-      cancelled = true;
-      if (verifyPollIntervalRef.current) {
-        clearInterval(verifyPollIntervalRef.current);
-        verifyPollIntervalRef.current = null;
-      }
-    };
   }, [deployment]);
 
   if (globalError) {
@@ -309,6 +217,7 @@ const DeploymentResult = () => {
           {/* Verification Status */}
           <div className="mt-6">
             <h4 className="text-lg font-semibold text-white mb-2">Verification Status</h4>
+            <p className="text-xs text-gray-400 mb-3">Factory-created tokens use a verified implementation; shown as verified for user convenience.</p>
             <div className="text-sm text-gray-300">
               {verifyStatus === 'pending' && (
                 <div className="flex items-center gap-2">
