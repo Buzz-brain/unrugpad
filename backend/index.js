@@ -178,7 +178,7 @@ app.get('/api/verify-proxy/status', async (req, res) => {
   // If API key is available, use BscScan API (preferred)
   if (apiKey) {
     // Use Etherscan V2 API for contract source code verification
-    const url = `https://api.etherscan.io/v2/api?chainid=56&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
+    const url = `https://api.etherscan.io/v2/api?chainid=56&module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
     try {
       https.get(url, (apiRes) => {
         let body = '';
