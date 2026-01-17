@@ -186,13 +186,15 @@ app.get('/api/verify-proxy/status', async (req, res) => {
           try {
             const parsed = JSON.parse(body);
             if (!parsed.result || !Array.isArray(parsed.result) || parsed.result.length === 0) {
-              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}` });
+              console.error('[BscScan API] Unexpected result:', body);
+              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'BscScan API returned no result', raw: body });
             }
             const result = parsed.result[0];
             if (result.SourceCode && result.SourceCode.length > 0) {
               return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
             } else {
-              return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}` });
+              console.warn('[BscScan API] Contract not verified. API result:', body);
+              return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'Contract not verified on BscScan', raw: body });
             }
           } catch (e) {
             return res.status(500).json({ status: 'failed', error: 'Failed to parse BscScan response', details: body });
