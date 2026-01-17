@@ -175,7 +175,16 @@ app.get('/api/verify-proxy/status', async (req, res) => {
   const apiKey = smartEnv.BSCSCAN_API_KEY || process.env.BSCSCAN_API_KEY;
   const https = require('https');
 
-  // If API key is available, use BscScan API (preferred)
+  // Simple in-memory cache to reduce duplicate API calls and avoid rate limits
+  if (!global.__verifyCache) global.__verifyCache = new Map();
+  const cacheKey = proxyAddress.toLowerCase();
+  const cached = global.__verifyCache.get(cacheKey);
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) {
+    return res.json({ status: cached.status, explorer: cached.explorer, note: 'from_cache', raw: cached.raw, error: cached.error });
+  }
+
+  // If API key is available, use Etherscan V2 API (preferred)
   if (apiKey) {
     // Use Etherscan V2 API for contract source code verification
     const url = `https://api.etherscan.io/v2/api?chainid=56&module=contract&action=getsourcecode&address=${proxyAddress}&apikey=${apiKey}`;
@@ -186,25 +195,59 @@ app.get('/api/verify-proxy/status', async (req, res) => {
         apiRes.on('end', () => {
           try {
             const parsed = JSON.parse(body);
-            // V2 format: { status, message, result: { SourceCode, ... } }
-            if (!parsed.result || !parsed.result.SourceCode) {
-              console.error('[Etherscan V2 API] Unexpected result:', body);
-              return res.json({ status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'Etherscan V2 API returned no result', raw: body });
+
+            // raw result may be string (errors) or object/array
+            const rawResult = parsed.result;
+
+            // Detect rate-limit messages
+            if (typeof rawResult === 'string' && /rate limit|Max calls per sec/i.test(rawResult)) {
+              console.warn('[Etherscan V2 API] Rate limited:', rawResult);
+              const payload = { status: 'rate_limited', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'rate_limit', raw: body };
+              global.__verifyCache.set(cacheKey, { ...payload, ts: Date.now() });
+              return res.json(payload);
             }
-            if (parsed.result.SourceCode && parsed.result.SourceCode.length > 0) {
-              return res.json({ status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code` });
+
+            // If status indicates NOTOK with string result, return unknown with details
+            if (parsed.status === '0' && typeof parsed.result === 'string') {
+              console.warn('[Etherscan V2 API] NOTOK response:', parsed.result);
+              const payload = { status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: parsed.result, raw: body };
+              global.__verifyCache.set(cacheKey, { ...payload, ts: Date.now() });
+              return res.json(payload);
+            }
+
+            // Normalize result object (array or object)
+            let resultObj = parsed.result;
+            if (Array.isArray(resultObj) && resultObj.length > 0) resultObj = resultObj[0];
+
+            if (!resultObj || typeof resultObj.SourceCode === 'undefined') {
+              console.error('[Etherscan V2 API] Unexpected result format:', body);
+              const payload = { status: 'unknown', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'no_result_field', raw: body };
+              global.__verifyCache.set(cacheKey, { ...payload, ts: Date.now() });
+              return res.json(payload);
+            }
+
+            const src = String(resultObj.SourceCode || '').trim();
+            const meaningful = src.length > 2 && !/^\{\s*\}\s*$/.test(src);
+            if (meaningful) {
+              const payload = { status: 'already_verified', explorer: `https://bscscan.com/address/${proxyAddress}#code`, raw: body };
+              global.__verifyCache.set(cacheKey, { ...payload, ts: Date.now() });
+              return res.json(payload);
             } else {
-              console.warn('[Etherscan V2 API] Contract not verified. API result:', body);
-              return res.json({ status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}`, error: 'Contract not verified on BscScan', raw: body });
+              const payload = { status: 'not_verified', explorer: `https://bscscan.com/address/${proxyAddress}`, raw: body };
+              global.__verifyCache.set(cacheKey, { ...payload, ts: Date.now() });
+              return res.json(payload);
             }
           } catch (e) {
-            return res.status(500).json({ status: 'failed', error: 'Failed to parse Etherscan V2 response', details: body });
+            console.error('[Etherscan V2 API] Parse error:', e, 'body:', body);
+            return res.status(500).json({ status: 'failed', error: 'Failed to parse Etherscan V2 response', details: String(e), raw: body });
           }
         });
       }).on('error', (err) => {
+        console.error('[Etherscan V2 API] Request error:', err.message);
         return res.status(500).json({ status: 'failed', error: 'Etherscan V2 API request failed', details: err.message });
       });
     } catch (e) {
+      console.error('[Etherscan V2 API] Internal error:', e);
       return res.status(500).json({ status: 'failed', error: 'Internal server error', details: String(e) });
     }
     return;
