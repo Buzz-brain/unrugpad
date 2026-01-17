@@ -45,6 +45,10 @@ Next steps
 
 ## Automated Verification (BscScan)
 
+Note: verification endpoints are disabled by default in the server to avoid accidental heavy use of explorer APIs. The frontend marks factory-created tokens as verified (proxy pattern) and does not rely on these endpoints for user-facing UX.
+
+The backend can still provide verification tooling for admin/debugging if explicitly enabled.
+
 The backend exposes a verification endpoint used by the frontend or CI to verify implementation contracts on BscScan.
 
 - Endpoint: `POST /api/verify-proxy`
@@ -62,3 +66,7 @@ The backend exposes a verification endpoint used by the frontend or CI to verify
   - `failed` — verification failed; `output` contains Hardhat CLI logs for inspection
 
 Security: protect this endpoint before exposing it publicly. Consider adding authentication or restricting access to CI IPs.
+
+Re-enabling (admin use)
+- By default the server returns HTTP 410 from `/api/verify-proxy` and `/api/verify-proxy/status`.
+- To re-enable verification endpoints set `VERIFY_ENDPOINT_ENABLED=true` in the server environment (admin/debug only). Ensure `smart-contract/.env` contains `BSCSCAN_API_KEY` and `BSC_RPC_URL` if using verification flows.

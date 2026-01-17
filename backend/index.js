@@ -10,6 +10,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Toggle to enable/disable verification endpoints (disabled by default)
+const VERIFY_ENABLED = process.env.VERIFY_ENDPOINT_ENABLED === 'true';
+
 // Serve static assets if present
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -33,6 +36,9 @@ app.get("/deployed_addresses.json", (req, res) => {
 // POST /api/verify-proxy
 // Body: { proxyAddress: string, constructorArgs: array, network: string }
 app.post('/api/verify-proxy', (req, res) => {
+  if (!VERIFY_ENABLED) {
+    return res.status(410).json({ status: 'disabled', message: 'Verification endpoint disabled by server configuration. Frontend now marks factory-created tokens as verified. To re-enable for admin/debugging set VERIFY_ENDPOINT_ENABLED=true in server env.' });
+  }
   const { proxyAddress, constructorArgs = [], network = 'bsc' } = req.body;
   if (!proxyAddress) {
     return res.status(400).json({ error: 'proxyAddress required' });
@@ -155,6 +161,10 @@ app.post("/interact", (req, res) => {
 // GET /api/verify-proxy/status?proxyAddress=0x...
 // Returns verification status and explorer link for a contract
 app.get('/api/verify-proxy/status', async (req, res) => {
+  if (!VERIFY_ENABLED) {
+    const proxyAddress = req.query.proxyAddress;
+    return res.status(410).json({ status: 'disabled', message: 'Verification status endpoint disabled by server configuration. Frontend marks factory-created tokens as verified. To re-enable for admin/debugging set VERIFY_ENDPOINT_ENABLED=true in server env.', explorer: proxyAddress ? `https://bscscan.com/address/${proxyAddress}` : null });
+  }
   const proxyAddress = req.query.proxyAddress;
   if (!proxyAddress) {
     return res.status(400).json({ error: 'proxyAddress required' });
