@@ -147,7 +147,7 @@ const DeploymentResult = () => {
 
         {/* Deployment progress stepper */}
         <div className="mb-6">
-          <div className="flex items-center justify-center gap-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 text-white">
                 <CheckCircle size={18} />
@@ -199,7 +199,7 @@ const DeploymentResult = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-3">
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white" title="This contract is verified on BscScan">Verified</span>
                     <button
                       className="text-cyan-300 underline text-sm hover:text-cyan-200 focus:outline-none"
@@ -252,9 +252,10 @@ const DeploymentResult = () => {
                 Manage your token, add liquidity, or view analytics
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <Button
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() =>
                   window.open(
                     `${explorerBase}${deployment.address}`,
@@ -265,7 +266,7 @@ const DeploymentResult = () => {
                 <ExternalLink size={18} />
                 View on Explorer
               </Button>
-              <Button onClick={() => navigate("/dashboard")}> 
+              <Button className="w-full sm:w-auto" onClick={() => navigate("/dashboard")}> 
                 Go to Dashboard
               </Button>
             </div>
