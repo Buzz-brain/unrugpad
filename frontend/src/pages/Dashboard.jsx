@@ -612,23 +612,23 @@ const Dashboard = () => {
                   <span className="text-gray-400">Paused:</span>
                   <span className={`font-mono ${token.tradingPaused ? 'text-yellow-400' : 'text-green-400'}`}>{token.tradingPaused ? 'Yes' : 'No'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Address:</span>
-                  <span className="text-white font-mono flex items-center gap-2">
-                    <span className="font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Address:</span>
+                    <span className="text-white font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-3">
                     {token.verifyStatus === 'already_verified' && (
-                      <>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
-                        <button
-                          className="ml-2 text-cyan-300 underline text-xs hover:text-cyan-200"
-                          onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
-                          title="View on BscScan"
-                        >
-                          View on BscScan
-                        </button>
-                      </>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
                     )}
-                  </span>
+                    <button
+                      className="text-cyan-300 underline text-xs hover:text-cyan-200"
+                      onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
+                      title="View on BscScan"
+                    >
+                      View on BscScan
+                    </button>
+                  </div>
                 </div>
                 {/* Verification: badge+link shown next to address (no duplicate row) */}
                 
