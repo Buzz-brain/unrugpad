@@ -629,7 +629,7 @@ const Dashboard = () => {
                       </button>
                     </span>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 mt-1">
+                  <div className="flex items-center justify-end gap-3 mt-1">
                     {token.verifyStatus === 'already_verified' && (
                       <span
                         className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white cursor-help"

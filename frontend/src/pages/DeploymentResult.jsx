@@ -158,7 +158,8 @@ const DeploymentResult = () => {
               </div>
             </div>
 
-            <div className="w-12 h-px bg-gray-700" />
+            <div className="hidden sm:block w-12 h-px bg-gray-700" />
+            <div className="block sm:hidden h-12 w-px bg-gray-700" />
 
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 text-white">
@@ -199,7 +200,7 @@ const DeploymentResult = () => {
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+                  <div className="flex items-center justify-end gap-3">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white" title="This contract is verified on BscScan">Verified</span>
                     <button
                       className="text-cyan-300 underline text-sm hover:text-cyan-200 focus:outline-none"
@@ -243,7 +244,7 @@ const DeploymentResult = () => {
         </div>
 
         <Card className="bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border-cyan-500/30">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
             <div>
               <h3 className="text-xl font-bold text-white mb-2">
                 What's Next?
