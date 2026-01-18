@@ -80,6 +80,7 @@ const Dashboard = () => {
   const [tokens, setTokens] = useState([]);
   const [liveTokenDetails, setLiveTokenDetails] = useState([]);
   const [isFetchingTokens, setIsFetchingTokens] = useState(false);
+  const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   // Removed local wallet modal state, now using global WalletModalContext
   const [isLoading, setIsLoading] = useState(false);
@@ -169,6 +170,7 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchLiveDetails = async () => {
       if (!tokens.length) return;
+      setIsFetchingDetails(true);
 
       // Build a provider or signer fallback so we can query the chain
       let providerOrSigner = signer || provider;
@@ -301,8 +303,10 @@ const Dashboard = () => {
 
       console.log('[DASHBOARD] Live token details:', details);
       setLiveTokenDetails(details);
+      setIsFetchingDetails(false);
     };
-    fetchLiveDetails();
+    // Only run details fetch when we have tokens
+    if (tokens.length) fetchLiveDetails();
     // Set up periodic verification refresh for tokens
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
     const interval = setInterval(async () => {
@@ -324,7 +328,10 @@ const Dashboard = () => {
       }
     }, 60000); // every 60s
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      setIsFetchingDetails(false);
+    };
   }, [tokens, signer, provider, account]);
 
   const openModal = (type, token) => {
@@ -523,7 +530,7 @@ const Dashboard = () => {
           </div>
         </motion.div>
 
-  {isFetchingTokens ? (
+  {(isFetchingTokens || isFetchingDetails) ? (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {Array.from({ length: 6 }).map((_, i) => (
         <motion.div key={`skeleton-${i}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
