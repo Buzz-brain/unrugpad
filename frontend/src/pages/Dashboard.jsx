@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Coins, Send, CheckCircle, Eye, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Coins, Send, CheckCircle, Eye, RefreshCw, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 // --- AdvancedTokenDetailsModal: Modal-based advanced info section ---
 import { ChevronRight } from 'lucide-react';
@@ -613,18 +614,39 @@ const Dashboard = () => {
                   <span className={`font-mono ${token.tradingPaused ? 'text-yellow-400' : 'text-green-400'}`}>{token.tradingPaused ? 'Yes' : 'No'}</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-400">Address:</span>
-                    <span className="text-white font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                    <span className="text-white font-mono flex items-center gap-2">
+                      <span>{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                      <button
+                        className="text-gray-400 hover:text-cyan-400 focus:outline-none"
+                        onClick={() => {
+                          navigator.clipboard.writeText(token.address);
+                          toast.success('Address copied to clipboard!');
+                        }}
+                        aria-label="Copy address"
+                        tabIndex={0}
+                      >
+                        <Copy size={16} />
+                      </button>
+                    </span>
                   </div>
-                  <div className="flex items-center justify-end gap-3">
+                  <div className="flex items-center justify-end gap-3 mt-1">
                     {token.verifyStatus === 'already_verified' && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white cursor-help"
+                        title="This contract is verified on BscScan"
+                        tabIndex={0}
+                        style={{ outline: 'none' }}
+                      >
+                        Verified
+                      </span>
                     )}
                     <button
-                      className="text-cyan-300 underline text-xs hover:text-cyan-200"
+                      className="text-cyan-300 underline text-xs hover:text-cyan-200 focus:outline-none"
                       onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
                       title="View on BscScan"
+                      tabIndex={0}
                     >
                       View on BscScan
                     </button>
