@@ -170,17 +170,7 @@ const DeploymentResult = () => {
               </div>
             </div>
 
-            <div className="w-12 h-px bg-gray-700" />
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 flex items-center justify-center rounded-full bg-cyan-600 text-white">
-                <CheckCircle size={18} />
-              </div>
-              <div className="text-sm">
-                <div className="font-semibold text-white">Ready</div>
-                <div className="text-gray-400">Manage & add liquidity</div>
-              </div>
-            </div>
+          
           </div>
         </div>
 
@@ -194,20 +184,25 @@ const DeploymentResult = () => {
               <InfoRow label="Symbol" value={form?.symbol || "N/A"} />
               <InfoRow label="Total Supply" value={form?.totalSupply || "N/A"} />
               {deployment?.address && (
-                <div className="flex items-center justify-between py-3 border-b border-gray-800 last:border-0">
-                  <span className="text-gray-400 text-sm">Contract Address</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-mono text-sm">{deployment.address.length > 20 ? `${deployment.address.slice(0,10)}...${deployment.address.slice(-8)}` : deployment.address}</span>
+                <div className="flex flex-col gap-2 py-3 border-b border-gray-800 last:border-0">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-400">Contract Address</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-mono">{deployment.address.length > 20 ? `${deployment.address.slice(0,10)}...${deployment.address.slice(-8)}` : deployment.address}</span>
+                      <button
+                        onClick={() => copyToClipboard(deployment.address, 'Contract Address')}
+                        className="text-gray-400 hover:text-cyan-400 transition-colors focus:outline-none"
+                        aria-label="Copy contract address"
+                      >
+                        <Copy size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white" title="This contract is verified on BscScan">Verified</span>
                     <button
-                      onClick={() => copyToClipboard(deployment.address, 'Contract Address')}
-                      className="text-gray-400 hover:text-cyan-400 transition-colors"
-                      aria-label="Copy contract address"
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
-                    <button
-                      className="ml-2 text-cyan-300 underline text-sm hover:text-cyan-200"
+                      className="text-cyan-300 underline text-sm hover:text-cyan-200 focus:outline-none"
                       onClick={() => window.open(`${explorerBase}${deployment.address}#code`, '_blank')}
                     >
                       View on BscScan
