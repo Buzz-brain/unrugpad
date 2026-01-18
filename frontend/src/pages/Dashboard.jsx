@@ -54,8 +54,6 @@ function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
       </div>
     </Modal>
   );
-}
-import { toast } from 'react-toastify';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
