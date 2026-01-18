@@ -194,7 +194,26 @@ const DeploymentResult = () => {
               <InfoRow label="Symbol" value={form?.symbol || "N/A"} />
               <InfoRow label="Total Supply" value={form?.totalSupply || "N/A"} />
               {deployment?.address && (
-                <InfoRow label="Contract Address" value={deployment.address} copyable />
+                <div className="flex items-center justify-between py-3 border-b border-gray-800 last:border-0">
+                  <span className="text-gray-400 text-sm">Contract Address</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-mono text-sm">{deployment.address.length > 20 ? `${deployment.address.slice(0,10)}...${deployment.address.slice(-8)}` : deployment.address}</span>
+                    <button
+                      onClick={() => copyToClipboard(deployment.address, 'Contract Address')}
+                      className="text-gray-400 hover:text-cyan-400 transition-colors"
+                      aria-label="Copy contract address"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
+                    <button
+                      className="ml-2 text-cyan-300 underline text-sm hover:text-cyan-200"
+                      onClick={() => window.open(`${explorerBase}${deployment.address}#code`, '_blank')}
+                    >
+                      View on BscScan
+                    </button>
+                  </div>
+                </div>
               )}
               {deployment?.txHash && (
                 <InfoRow label="Transaction Hash" value={deployment.txHash} copyable />
@@ -257,55 +276,7 @@ const DeploymentResult = () => {
             </div>
           </div>
 
-          {/* Verification Status */}
-          <div className="mt-6">
-            <h4 className="text-lg font-semibold text-white mb-2">Verification Status</h4>
-            <p className="text-xs text-gray-400 mb-3">Factory-created tokens use a verified implementation; shown as verified for user convenience.</p>
-            <div className="text-sm text-gray-300">
-              {verifyStatus === 'pending' && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full animate-pulse bg-yellow-400" />
-                  <span>Verification in progress — submitting to BscScan...</span>
-                </div>
-              )}
-              {verifyStatus === 'ok' && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-green-400" />
-                  <span>Verification submitted successfully.</span>
-                  {verifyExplorer && (
-                    <button className="ml-3 text-cyan-300 underline" onClick={() => window.open(verifyExplorer, '_blank')}>Open on BscScan</button>
-                  )}
-                </div>
-              )}
-              {verifyStatus === 'already_verified' && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-green-400" />
-                  <span>Contract verified on BscScan.</span>
-                  {verifyExplorer && (
-                    <button className="ml-3 text-cyan-300 underline" onClick={() => window.open(verifyExplorer, '_blank')}>Open on BscScan</button>
-                  )}
-                </div>
-              )}
-              {verifyStatus === 'api_key_missing' && (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-red-500" />
-                  <span>BscScan API key missing on server. Verification cannot proceed.</span>
-                </div>
-              )}
-              {verifyStatus === 'failed' && (
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-red-500" />
-                    <span>Verification failed. See logs below.</span>
-                  </div>
-                  <pre className="max-h-48 overflow-auto mt-2 text-xs bg-black/30 p-2 rounded">{verifyOutput}</pre>
-                </div>
-              )}
-              {verifyStatus === 'idle' && (
-                <div className="text-gray-400">Queued for verification.</div>
-              )}
-            </div>
-          </div>
+          {/* Verification status details removed — badge + link shown next to address above */}
         </Card>
       </div>
     </div>

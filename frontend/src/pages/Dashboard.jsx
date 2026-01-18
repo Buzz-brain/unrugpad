@@ -623,30 +623,7 @@ const Dashboard = () => {
                     )}
                   </span>
                 </div>
-                {/* Verification Status Row */}
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-gray-400">Verification:</span>
-                  <span className="flex items-center gap-2">
-                    {token.verifyStatus === 'pending' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full animate-pulse bg-yellow-400" /> Pending</span>
-                    )}
-                    {token.verifyStatus === 'ok' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
-                    )}
-                    {token.verifyStatus === 'already_verified' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" aria-hidden /> <span className="text-sm font-medium">Verified</span> {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
-                    )}
-                    {token.verifyStatus === 'api_key_missing' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> API Key Missing</span>
-                    )}
-                    {token.verifyStatus === 'failed' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> Failed</span>
-                    )}
-                    {token.verifyStatus === 'unknown' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-500" /> Unknown</span>
-                    )}
-                  </span>
-                </div>
+                {/* Verification: badge+link shown next to address (no duplicate row) */}
                 
                 {token.error && (
                   <div className="text-red-400 text-xs">{token.error}</div>
