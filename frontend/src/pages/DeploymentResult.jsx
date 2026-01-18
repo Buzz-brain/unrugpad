@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import confetti from 'canvas-confetti';
 import Button from '../components/Button';
 import Card from '../components/Card';
+import Skeleton from '../components/Skeleton';
 
 import deployedAddresses from '../../../backend/deployed_addresses.json';
 
@@ -88,7 +89,10 @@ const DeploymentResult = () => {
       <span className="text-gray-400 text-sm">{label}</span>
       <div className="flex items-center gap-2">
         <span className="text-white font-mono text-sm">
-          {value.length > 20 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value}
+          {(value === undefined || value === null)
+            ? <Skeleton className="w-36 h-4" />
+            : (value.length > 20 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value)
+          }
         </span>
         {copyable && (
           <button

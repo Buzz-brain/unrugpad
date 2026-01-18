@@ -58,6 +58,7 @@ import { toast } from 'react-toastify';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
+import Skeleton from '../components/Skeleton';
 import { useWalletModal } from '../contexts/WalletModalContext';
 import { useWeb3 } from '../contexts/Web3Context';
 import { ethers } from 'ethers';
@@ -78,6 +79,7 @@ const Dashboard = () => {
   const showWrongNetworkWarning = isConnected && chainId !== 56;
   const [tokens, setTokens] = useState([]);
   const [liveTokenDetails, setLiveTokenDetails] = useState([]);
+  const [isFetchingTokens, setIsFetchingTokens] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   // Removed local wallet modal state, now using global WalletModalContext
   const [isLoading, setIsLoading] = useState(false);
@@ -95,6 +97,7 @@ const Dashboard = () => {
   const fetchTokens = async () => {
     if (!account) return;
     if (chainId !== 56) return;
+    setIsFetchingTokens(true);
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
     try {
       const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
@@ -142,6 +145,8 @@ const Dashboard = () => {
       console.error("[DASHBOARD] Network error:", err);
       setTokens([]);
       setGlobalError('Network error: Unable to fetch contract addresses. Please check your connection.');
+    } finally {
+      setIsFetchingTokens(false);
     }
   };
 
@@ -514,10 +519,37 @@ const Dashboard = () => {
           </div>
           <div className="mt-4">
             <p className="text-gray-400 text-lg">View your deployed tokens</p>
+            {/* No banner, keep UI clean */}
           </div>
         </motion.div>
 
-  {(!globalError && liveTokenDetails.length === 0) ? (
+  {isFetchingTokens ? (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <motion.div key={`skeleton-${i}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <Skeleton className="w-32 h-6 mb-2" />
+                <Skeleton className="w-20 h-4" />
+              </div>
+              <div className="w-12 h-12">
+                <Skeleton className="w-12 h-12 rounded-full" circle />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="w-full h-4" />
+              <Skeleton className="w-full h-4" />
+              <div className="flex gap-2">
+                <Skeleton className="w-1/2 h-4" />
+                <Skeleton className="w-1/2 h-4" />
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+      ))}
+    </div>
+  ) : (!globalError && liveTokenDetails.length === 0) ? (
     <Card className="text-center">
       <Coins size={64} className="text-gray-600 mx-auto mb-4" />
       <h3 className="text-xl font-bold text-white mb-2">No Tokens Yet</h3>
@@ -575,7 +607,21 @@ const Dashboard = () => {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Address:</span>
-                  <span className="text-white font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                  <span className="text-white font-mono flex items-center gap-2">
+                    <span className="font-mono">{token.address?.slice(0, 6)}...{token.address?.slice(-4)}</span>
+                    {token.verifyStatus === 'already_verified' && (
+                      <>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white">Verified</span>
+                        <button
+                          className="ml-2 text-cyan-300 underline text-xs hover:text-cyan-200"
+                          onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
+                          title="View on BscScan"
+                        >
+                          View on BscScan
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </div>
                 {/* Verification Status Row */}
                 <div className="flex justify-between text-sm items-center">
@@ -588,7 +634,7 @@ const Dashboard = () => {
                       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
                     )}
                     {token.verifyStatus === 'already_verified' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" aria-hidden /> <span className="text-sm font-medium">Verified</span> {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
                     )}
                     {token.verifyStatus === 'api_key_missing' && (
                       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> API Key Missing</span>
@@ -601,7 +647,7 @@ const Dashboard = () => {
                     )}
                   </span>
                 </div>
-                <div className="text-xs text-gray-400 mt-1">Tokens created by the factory use a verified implementation; they are shown as verified in the dashboard for clarity.</div>
+                
                 {token.error && (
                   <div className="text-red-400 text-xs">{token.error}</div>
                 )}
