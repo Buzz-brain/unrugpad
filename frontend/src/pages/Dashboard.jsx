@@ -6,6 +6,18 @@ import { toast } from 'react-toastify';
 // --- AdvancedTokenDetailsModal: Modal-based advanced info section ---
 import { ChevronRight } from 'lucide-react';
 
+import Button from '../components/Button';
+import Card from '../components/Card';
+import Input from '../components/Input';
+import Skeleton from '../components/Skeleton';
+import { useWalletModal } from '../contexts/WalletModalContext';
+import { useWeb3 } from '../contexts/Web3Context';
+import { ethers } from 'ethers';
+import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
+import UnrugpadTokenFactoryABI from '../abis/UnrugpadTokenFactory.json';
+import { interactWithToken } from '../utils/api';
+import Modal from '../components/Modal';
+
 function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
   if (!token) return null;
   const advancedFields = [
@@ -54,19 +66,7 @@ function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
       </div>
     </Modal>
   );
-import Button from '../components/Button';
-import Card from '../components/Card';
-import Input from '../components/Input';
-import Skeleton from '../components/Skeleton';
-import { useWalletModal } from '../contexts/WalletModalContext';
-import { useWeb3 } from '../contexts/Web3Context';
-import { ethers } from 'ethers';
-import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
-import UnrugpadTokenFactoryABI from '../abis/UnrugpadTokenFactory.json';
-import { interactWithToken } from '../utils/api';
-// import { getTokenInfo, interactWithToken } from '../utils/api';
-import Modal from '../components/Modal';
-
+}
 const Dashboard = () => {
   const { isConnected, account, provider, signer, chainId } = useWeb3();
   // --- Modal state for advanced details ---
