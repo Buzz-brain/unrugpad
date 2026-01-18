@@ -588,7 +588,7 @@ const Dashboard = () => {
                       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
                     )}
                     {token.verifyStatus === 'already_verified' && (
-                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-400" /> Already Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-400" /> Verified {token.verifyExplorer && (<button className="ml-1 text-cyan-300 underline" onClick={() => window.open(token.verifyExplorer, '_blank')}>BscScan</button>)}</span>
                     )}
                     {token.verifyStatus === 'api_key_missing' && (
                       <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500" /> API Key Missing</span>

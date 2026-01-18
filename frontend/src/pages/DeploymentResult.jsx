@@ -141,6 +141,45 @@ const DeploymentResult = () => {
           </p>
         </motion.div>
 
+        {/* Deployment progress stepper */}
+        <div className="mb-6">
+          <div className="flex items-center justify-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 text-white">
+                <CheckCircle size={18} />
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-white">Deployed</div>
+                <div className="text-gray-400">Transaction confirmed</div>
+              </div>
+            </div>
+
+            <div className="w-12 h-px bg-gray-700" />
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 text-white">
+                <CheckCircle size={18} />
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-white">Verified</div>
+                <div className="text-gray-400">Implementation verified</div>
+              </div>
+            </div>
+
+            <div className="w-12 h-px bg-gray-700" />
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 flex items-center justify-center rounded-full bg-cyan-600 text-white">
+                <CheckCircle size={18} />
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-white">Ready</div>
+                <div className="text-gray-400">Manage & add liquidity</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <Card glow>
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -236,8 +275,8 @@ const DeploymentResult = () => {
               )}
               {verifyStatus === 'already_verified' && (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-blue-400" />
-                  <span>Contract already verified on BscScan.</span>
+                  <div className="w-4 h-4 rounded-full bg-green-400" />
+                  <span>Contract verified on BscScan.</span>
                   {verifyExplorer && (
                     <button className="ml-3 text-cyan-300 underline" onClick={() => window.open(verifyExplorer, '_blank')}>Open on BscScan</button>
                   )}
