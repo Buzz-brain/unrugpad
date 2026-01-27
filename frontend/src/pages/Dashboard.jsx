@@ -17,6 +17,7 @@ import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
 import UnrugpadTokenFactoryABI from '../abis/UnrugpadTokenFactory.json';
 import { interactWithToken } from '../utils/api';
 import Modal from '../components/Modal';
+import AdminPanel from '../components/AdminPanel';
 
 function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
   if (!token) return null;
@@ -71,6 +72,8 @@ const Dashboard = () => {
   const { isConnected, account, provider, signer, chainId } = useWeb3();
   // --- Modal state for advanced details ---
   const [advancedModalToken, setAdvancedModalToken] = useState(null);
+  const [adminModalToken, setAdminModalToken] = useState(null);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   // Log chainId for debugging
   // console.log('Current chainId:', chainId);
 
@@ -112,7 +115,7 @@ const Dashboard = () => {
       }
       let providerOrSigner = null;
       if (window.ethereum) {
-        const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+        const ethersProvider = new ethers.providers.Web3Provider(window.ethereum);
         providerOrSigner = await ethersProvider.getSigner();
       } else if (provider) {
         providerOrSigner = provider;
@@ -151,18 +154,9 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    // Fetch tokens on mount and when account/provider/chainId change.
+    // Removed automatic refetch on tab visibility to avoid noisy refreshes when switching tabs.
     fetchTokens();
-    // Refetch tokens when account, provider, chainId, or after deployment
-    // Listen for navigation from deployment result
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchTokens();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, [account, provider, openWalletModal, chainId]);
 
   // Fetch live token details from blockchain
@@ -175,7 +169,7 @@ const Dashboard = () => {
       let providerOrSigner = signer || provider;
       if (!providerOrSigner && typeof window !== 'undefined' && window.ethereum) {
         try {
-          const ethersProvider = new ethers.BrowserProvider(window.ethereum);
+          const ethersProvider = new ethers.providers.Web3Provider(window.ethereum);
           providerOrSigner = await ethersProvider.getSigner();
         } catch (err) {
           console.warn('[DASHBOARD] Could not create fallback signer from window.ethereum:', err);
@@ -252,7 +246,25 @@ const Dashboard = () => {
 
           // Normalize values to strings for display
           const norm = (v) => (v && v.toString ? v.toString() : String(v));
-          const normStruct = (s) => (s && typeof s === 'object' ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k, norm(v)])) : s);
+          const normStruct = (s) => {
+            if (!s) return { marketing: '0', dev: '0', lp: '0' };
+            // ethers may return a struct as an array-like object (0,1,2) or as named keys
+            if (Array.isArray(s) || (typeof s === 'object' && s[0] !== undefined)) {
+              return {
+                marketing: s[0]?.toString?.() ?? '0',
+                dev: s[1]?.toString?.() ?? '0',
+                lp: s[2]?.toString?.() ?? '0',
+              };
+            }
+            if (typeof s === 'object') {
+              return {
+                marketing: s.marketing?.toString?.() ?? '0',
+                dev: s.dev?.toString?.() ?? '0',
+                lp: s.lp?.toString?.() ?? '0',
+              };
+            }
+            return { marketing: norm(s), dev: '0', lp: '0' };
+          };
 
           return {
             ...token,
@@ -309,9 +321,9 @@ const Dashboard = () => {
     // Set up periodic verification refresh for tokens
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
     const interval = setInterval(async () => {
-      if (!details || details.length === 0) return;
+      if (!liveTokenDetails || liveTokenDetails.length === 0) return;
       try {
-        const refreshed = await Promise.all(details.map(async (t) => {
+        const refreshed = await Promise.all(liveTokenDetails.map(async (t) => {
           try {
             const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${t.address}`);
             if (!resp.ok) return t;
@@ -603,9 +615,22 @@ const Dashboard = () => {
                   <span className="text-gray-400">Decimals:</span>
                   <span className="text-white font-mono">{token.decimals}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm items-center">
                   <span className="text-gray-400">Owner:</span>
-                  <span className="text-white font-mono">{token.owner?.slice(0, 6)}...{token.owner?.slice(-4)}</span>
+                  <span className="text-white font-mono flex items-center gap-2">
+                    <span>{token.owner?.slice(0, 6)}...{token.owner?.slice(-4)}</span>
+                    <button
+                      className="text-gray-400 hover:text-cyan-400 focus:outline-none"
+                      onClick={() => {
+                        navigator.clipboard.writeText(token.owner);
+                        toast.success('Owner address copied to clipboard!');
+                      }}
+                      aria-label="Copy owner address"
+                      tabIndex={0}
+                    >
+                      <Copy size={16} />
+                    </button>
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Paused:</span>
@@ -629,10 +654,24 @@ const Dashboard = () => {
                       </button>
                     </span>
                   </div>
-                  <div className="flex items-center justify-end gap-3 mt-1">
+                  <div className="flex items-center gap-2 mt-1 w-full">
+                    <button
+                      className="text-sm bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1 rounded"
+                      onClick={() => { setAdminModalToken(token); setShowAdminModal(true); }}
+                    >
+                      Manage
+                    </button>
+                    <button
+                      className="text-cyan-300 underline text-xs hover:text-cyan-200 focus:outline-none ml-auto"
+                      onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
+                      title="View on BscScan"
+                      tabIndex={0}
+                    >
+                      View on BscScan
+                    </button>
                     {token.verifyStatus === 'already_verified' && (
                       <span
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white cursor-help"
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white cursor-help ml-2"
                         title="This contract is verified on BscScan"
                         tabIndex={0}
                         style={{ outline: 'none' }}
@@ -640,14 +679,6 @@ const Dashboard = () => {
                         Verified
                       </span>
                     )}
-                    <button
-                      className="text-cyan-300 underline text-xs hover:text-cyan-200 focus:outline-none"
-                      onClick={() => window.open(`https://bscscan.com/address/${token.address}#code`, '_blank')}
-                      title="View on BscScan"
-                      tabIndex={0}
-                    >
-                      View on BscScan
-                    </button>
                   </div>
                 </div>
                 {/* Verification: badge+link shown next to address (no duplicate row) */}
@@ -656,7 +687,9 @@ const Dashboard = () => {
                   <div className="text-red-400 text-xs">{token.error}</div>
                 )}
               </div>
-              {/* Advanced Section (Modal) */}
+                {/* Admin: Manage button is in the actions row above */}
+
+                {/* Advanced Section (Modal) */}
               <button
                 className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 focus:outline-none mt-2 mb-1"
                 onClick={() => setAdvancedModalToken(token)}
@@ -708,6 +741,21 @@ const Dashboard = () => {
         token={advancedModalToken}
         isOpen={!!advancedModalToken}
         onClose={() => setAdvancedModalToken(null)}
+      />
+
+      {/* Centralized Admin modal controlled by token card Manage buttons */}
+      <AdminPanel
+        token={adminModalToken}
+        hideTrigger={true}
+        open={showAdminModal}
+        onClose={() => { setShowAdminModal(false); setAdminModalToken(null); }}
+        onEditSuccess={async () => {
+          setIsLoading(true);
+          await fetchTokens();
+          setIsLoading(false);
+          setShowAdminModal(false);
+          setAdminModalToken(null);
+        }}
       />
 
         <Modal

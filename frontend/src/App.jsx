@@ -12,15 +12,29 @@ import Dashboard from './pages/Dashboard';
 import Uniswap from './pages/Uniswap';
 import WalletModal from './components/WalletModal';
 import { lazy, Suspense } from 'react';
+import RpcWarning from './components/RpcWarning';
+import RpcHelpModal from './components/RpcHelpModal';
 
 function App() {
+  // detect rpc from window.ethereum if available (do not use useWeb3 here)
+  const rpcUrl = (() => {
+    try {
+      if (typeof window === 'undefined' || !window.ethereum) return '';
+      const current = window.ethereum; // provider
+      return current.rpcUrl || current._rpcUrl || current.connection?.url || current.host || '';
+    } catch (e) { return ''; }
+  })();
   return (
     <Web3Provider>
       <WalletModalProvider>
         <Router>
           <div className="min-h-screen bg-gray-900 pb-20">
             <Navbar />
+            <div className="container mx-auto px-4 mt-4">
+              <RpcWarning rpcUrl={rpcUrl} onOpenHelp={() => window.dispatchEvent(new CustomEvent('openRpcHelp'))} />
+            </div>
             <WalletModal />
+            <RpcHelpModal />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/deploy" element={<Deploy />} />

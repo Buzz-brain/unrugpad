@@ -1,6 +1,6 @@
 import axios from 'axios';
 import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
-import { BrowserProvider, Contract, parseUnits } from 'ethers';
+import { Contract, providers, utils } from 'ethers';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
@@ -25,7 +25,7 @@ export const getTokenInfo = async (address) => {
   } catch (e) {
     // Fallback: read minimal on-chain info using MetaMask provider if available
     if (typeof window !== 'undefined' && window.ethereum) {
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new providers.Web3Provider(window.ethereum);
       const contract = new Contract(address, UnrugpadTokenABI.abi, provider);
       const [name, symbol, totalSupply] = await Promise.all([
         contract.name(),
@@ -43,21 +43,21 @@ export const interactWithToken = async (interactionData) => {
   const { action, tokenAddress, to, amount, spender, address } = interactionData;
 
   if (typeof window !== 'undefined' && window.ethereum) {
-    const browserProvider = new BrowserProvider(window.ethereum);
-    const signer = await browserProvider.getSigner();
-    const contract = new Contract(tokenAddress, UnrugpadTokenABI.abi, signer || browserProvider);
+  const browserProvider = new providers.Web3Provider(window.ethereum);
+  const signer = browserProvider.getSigner();
+  const contract = new Contract(tokenAddress, UnrugpadTokenABI.abi, signer || browserProvider);
 
     if (action === 'transfer') {
       // amount expected in human units (e.g. '1.5')
       const value = typeof amount === 'string' ? amount : String(amount);
-      const tx = await contract.transfer(to, parseUnits(value, 18));
+      const tx = await contract.transfer(to, utils.parseUnits(value, 18));
       await tx.wait();
       return { txHash: tx.hash };
     }
 
     if (action === 'approve') {
       const value = typeof amount === 'string' ? amount : String(amount);
-      const tx = await contract.approve(spender, parseUnits(value, 18));
+      const tx = await contract.approve(spender, utils.parseUnits(value, 18));
       await tx.wait();
       return { txHash: tx.hash };
     }

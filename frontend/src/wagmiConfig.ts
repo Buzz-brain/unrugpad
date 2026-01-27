@@ -1,24 +1,67 @@
 
-import { createConfig, http } from "wagmi";
-import { bsc, sepolia } from "wagmi/chains";
-import { injected, walletConnect } from "wagmi/connectors";
+import { createClient, configureChains } from 'wagmi';
+import { bsc, sepolia } from 'wagmi/chains';
+import { jsonRpcProvider } from 'wagmi/providers/jsonRpc';
+import { InjectedConnector } from 'wagmi/connectors/injected';
+import { WalletConnectConnector } from 'wagmi/connectors/walletConnect';
 
-const BSC_RPC_URL = import.meta.env.VITE_BSC_RPC_URL;
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
+const BSC_RPC_URL = import.meta.env.VITE_BSC_RPC_URL || 'https://bsc-dataseed.binance.org/';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '';
+const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL || 'https://rpc.sepolia.org/';
 
-const SEPOLIA_RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
+const { chains, provider, webSocketProvider } = configureChains([
+  bsc,
+  sepolia,
+], [
+  jsonRpcProvider({
+    rpc: (chain) => {
+      if (chain.id === bsc.id) return { http: BSC_RPC_URL };
+      if (chain.id === sepolia.id) return { http: SEPOLIA_RPC_URL };
+      return null;
+    },
+  }),
+]);
 
-export const wagmiConfig = createConfig({
-  chains: [bsc, sepolia] as const,
-  transports: {
-    [bsc.id]: http(BSC_RPC_URL),
-    [sepolia.id]: http(SEPOLIA_RPC_URL),
-  },
+export const wagmiConfig = createClient({
+  autoConnect: true,
   connectors: [
-    injected(),
-    walletConnect({ projectId: WALLETCONNECT_PROJECT_ID }),
+    new InjectedConnector({ chains }),
+    new WalletConnectConnector({ chains, options: { projectId: WALLETCONNECT_PROJECT_ID } }),
   ],
+  provider,
+  webSocketProvider,
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // import { createAppKit } from "@reown/appkit-wagmi/react";
 // import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";

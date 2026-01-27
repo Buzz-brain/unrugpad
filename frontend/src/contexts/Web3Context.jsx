@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 
 const Web3Context = createContext();
@@ -16,8 +16,40 @@ export const Web3Provider = ({ children }) => {
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { data: balanceData } = useBalance({ address });
-  // const { chain } = useNetwork();
-  const chainId = chain?.id;
+  const [localChainId, setLocalChainId] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.ethereum && window.ethereum.chainId) {
+        return parseInt(window.ethereum.chainId, 16);
+      }
+    } catch (e) {}
+    return undefined;
+  });
+
+  useEffect(() => {
+    // Keep localChainId in sync with wagmi `chain` when available
+    if (chain && chain.id) setLocalChainId(chain.id);
+  }, [chain]);
+
+  useEffect(() => {
+    // Listen for provider chain changes (MetaMask network switch)
+    const handler = (chainHex) => {
+      try {
+        setLocalChainId(parseInt(chainHex, 16));
+      } catch (e) {
+        setLocalChainId(undefined);
+      }
+    };
+    if (typeof window !== 'undefined' && window.ethereum && window.ethereum.on) {
+      window.ethereum.on('chainChanged', handler);
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.ethereum && window.ethereum.removeListener) {
+        window.ethereum.removeListener('chainChanged', handler);
+      }
+    };
+  }, []);
+
+  const chainId = chain?.id ?? localChainId;
 
   const value = {
     account: address,
