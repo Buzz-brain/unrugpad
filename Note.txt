@@ -212,3 +212,39 @@ INFURA_API_URL=https://sepolia.infura.io/v3/...
 # MARKETING_WALLET=0x...
 # DEV_WALLET=0x...
 # PLATFORM_WALLET=0x...
+
+
+
+Yes, I understand what the developer means. Here’s a simple explanation:
+
+Your platform uses a “factory” contract to create new tokens.
+The tokens are deployed as “proxy” contracts that point to a single “implementation” contract (the logic for all tokens).
+The developer verified the implementation contract on BscScan.
+When a new token (proxy) is created, BscScan recognizes it uses the already-verified implementation, so it automatically marks the new token as “verified” too.
+This is a common pattern called “proxy pattern” or “upgradeable contracts.”
+
+Only the implementation contract needs to be verified.
+All tokens (proxies) created by the factory will show as “verified” on BscScan, even though only the implementation was directly verified.
+So, as long as the implementation contract is verified, all tokens created by your platform will appear as verified on BscScan.
+
+If you want, I can explain this with a diagram or more details!
+
+
+
+Yes, in your case, it is best practice to show the user that their token is “verified” on the frontend—regardless of the BscScan API check—because:
+
+All tokens created by your platform are proxies that point to a single, already-verified implementation contract.
+BscScan will always show these tokens as “verified” as long as the implementation contract remains verified.
+
+
+
+This avoids rate limits, API errors, and confusion for your users.
+You can safely display “Verified” immediately after deployment, and only use the BscScan API for rare troubleshooting or admin checks—not for every user/dashboard view.
+
+This is the most user-friendly and scalable approach for your platform.
+
+Yes, for your platform, this is best practice.
+
+Since all tokens are proxies pointing to a single, already-verified implementation contract, BscScan will always show them as “verified.” Displaying “Verified” on your frontend immediately after deployment is user-friendly, avoids unnecessary API calls, and scales well.
+
+You only need to use the BscScan API for rare admin/troubleshooting cases—not for every user or dashboard view. This approach is secure, efficient, and industry standard for proxy-based token factories.

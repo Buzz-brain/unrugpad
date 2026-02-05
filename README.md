@@ -86,3 +86,7 @@ Checking node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\Unrugpad\n
 Checking node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\node_modules\@openzeppelin\contracts\proxy\ERC1967\ERC1967Proxy.sol
 Found ERC1967Proxy in node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\node_modules\@openzeppelin\contracts\proxy\ERC1967\ERC1967Proxy.sol
 Deploy error source is not defined
+
+## Verification UX
+
+Tokens deployed via the included factory are shown as "verified" in the frontend UX because the factory uses a verified implementation contract (proxy pattern). To avoid hitting explorer API rate limits, the backend verification endpoints are disabled by default — enable them only for admin/debugging by setting `VERIFY_ENDPOINT_ENABLED=true` in the server environment and providing `BSCSCAN_API_KEY` in `smart-contract/.env`.

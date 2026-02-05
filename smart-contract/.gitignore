@@ -18,3 +18,6 @@
 
 # Hardhat coverage reports
 /coverage
+
+# Environment file (do NOT commit)
+.env
