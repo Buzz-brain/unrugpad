@@ -4,7 +4,8 @@
   "description": "Backend service to run Foundry deploy scripts for UnrugpadToken",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
