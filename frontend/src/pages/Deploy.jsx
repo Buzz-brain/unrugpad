@@ -27,6 +27,7 @@ const Deploy = () => {
     ownerAddress: account || "",
     marketingWallet: "",
     devWallet: "",
+    taxWallet: "",
     buyMarketingFee: "",
     buyDevFee: "",
     buyLpFee: "",
@@ -58,6 +59,10 @@ const Deploy = () => {
       newErrors.marketingWallet = "Marketing wallet is required";
     if (!formData.devWallet.trim())
       newErrors.devWallet = "Dev wallet is required";
+    if (!formData.taxWallet.trim())
+      newErrors.taxWallet = "Tax wallet is required";
+    else if (!/^0x[a-fA-F0-9]{40}$/.test(formData.taxWallet.trim()))
+      newErrors.taxWallet = "Tax wallet must be a valid Ethereum address";
 
     // Validate individual fees (0-30%)
     const feeFields = [
@@ -93,22 +98,15 @@ const Deploy = () => {
   };
 
   useEffect(() => {
-    // Check if user has enough BNB for gas (e.g., 0.005 BNB)
+    // Optionally check for BNB balance, but allow deployment with any amount
     if (!isConnected || chainId !== 56) {
       setDeploymentFee(null);
       setInsufficientFunds(false);
       return;
     }
-    // Set deploymentFee to 0n (free)
     setDeploymentFee(0n);
-    try {
-      const minGasBNB = 0.001; // Minimum BNB for gas (adjusted)
-      const userBalance = parseFloat(balance || "0");
-      setInsufficientFunds(userBalance < minGasBNB);
-    } catch (err) {
-      setInsufficientFunds(false);
-      console.error("Error checking user balance for gas:", err);
-    }
+    // Disable insufficient funds check (allow deploy with any balance)
+    setInsufficientFunds(false);
   }, [isConnected, account, balance, chainId]);
 
   // Keep ownerAddress synced to connected wallet
@@ -239,25 +237,29 @@ const Deploy = () => {
 
     try {
       setIsDeploying(true);
+      console.log("[DEPLOY-DEBUG] Starting deployment process");
       if (typeof window.ethereum === "undefined") {
+        console.error("[DEPLOY-DEBUG] window.ethereum is undefined. MetaMask not detected.");
         openWalletModal();
         setIsDeploying(false);
         return;
       }
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
       // Log chain/network info
-      console.log("[DEPLOY] chainId:", chainId, "account:", account);
+      console.log("[DEPLOY-DEBUG] chainId:", chainId, "account:", account);
       // Fetch factory address from backend
       let factoryAddress;
       try {
         const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+        console.log("[DEPLOY-DEBUG] Fetching factory address from:", `${apiBaseUrl}/deployed_addresses.json`);
         const res = await fetch(`${apiBaseUrl}/deployed_addresses.json`);
         const data = await res.json();
         factoryAddress = data.factory;
-        console.log("[DEPLOY] Factory address:", factoryAddress);
+        console.log("[DEPLOY-DEBUG] Factory address:", factoryAddress);
         if (!factoryAddress) throw new Error("Factory address not found");
       } catch (err) {
+        console.error("[DEPLOY-DEBUG] Error fetching factory address:", err);
         setGlobalError("Failed to fetch factory address. Please check your backend configuration.");
         setIsDeploying(false);
         return;
@@ -266,10 +268,11 @@ const Deploy = () => {
       const config = {
         name: formData.name,
         symbol: formData.symbol,
-        totalSupply: ethers.parseUnits(formData.totalSupply || "0", 18),
+        totalSupply: ethers.utils.parseUnits(formData.totalSupply || "0", 18),
         owner: formData.ownerAddress,
         marketingWallet: formData.marketingWallet,
         devWallet: formData.devWallet,
+        taxWallet: formData.taxWallet,
         buyFees: {
           marketing: Number(formData.buyMarketingFee || 0),
           dev: Number(formData.buyDevFee || 0),
@@ -291,19 +294,22 @@ const Deploy = () => {
           Number(formData.sellLpFee || 0),
         ].reduce((a, b) => a + b, 0),
       };
-      console.log("[DEPLOY] TokenConfig:", config);
+      console.log("[DEPLOY-DEBUG] TokenConfig:", config);
       const metadata = "";
       const factory = new ethers.Contract(factoryAddress, UnrugpadTokenFactoryABI.abi, signer);
       try {
         let deploymentFee = 0n;
         try {
           deploymentFee = await factory.deploymentFee();
-        } catch {}
-        console.log("[DEPLOY] Deployment fee:", deploymentFee);
+        } catch (feeErr) {
+          console.error("[DEPLOY-DEBUG] Error fetching deploymentFee:", feeErr);
+        }
+        console.log("[DEPLOY-DEBUG] Deployment fee:", deploymentFee);
+        console.log("[DEPLOY-DEBUG] About to call factory.createToken (MetaMask should open now)");
         const tx = await factory.createToken(config, metadata, { value: deploymentFee });
-        console.log("[DEPLOY] TX:", tx);
+        console.log("[DEPLOY-DEBUG] TX:", tx);
         const receipt = await tx.wait();
-        console.log("[DEPLOY] Receipt:", receipt);
+        console.log("[DEPLOY-DEBUG] Receipt:", receipt);
         let newTokenAddress = null;
         for (const log of receipt.logs) {
           try {
@@ -312,15 +318,17 @@ const Deploy = () => {
               newTokenAddress = parsed.args.tokenAddress;
               break;
             }
-          } catch {}
+          } catch (parseErr) {
+            console.error("[DEPLOY-DEBUG] Error parsing log:", parseErr);
+          }
         }
-        console.log("[DEPLOY] New token address:", newTokenAddress);
+        console.log("[DEPLOY-DEBUG] New token address:", newTokenAddress);
         // Immediately query userTokens mapping after deployment
         try {
           const userTokens = await factory.getUserTokens(account);
-          console.log("[DEPLOY] User tokens after deployment:", userTokens);
+          console.log("[DEPLOY-DEBUG] User tokens after deployment:", userTokens);
         } catch (err) {
-          console.error("[DEPLOY] Error querying userTokens after deployment:", err);
+          console.error("[DEPLOY-DEBUG] Error querying userTokens after deployment:", err);
         }
         if (!newTokenAddress) {
           setGlobalError("Token deployed but address not found in events.");
@@ -344,7 +352,16 @@ const Deploy = () => {
         });
         setGlobalError("");
       } catch (err) {
-        setGlobalError("Contract error: Failed to deploy token. Please check your network and contract configuration.");
+        console.error("[DEPLOY-DEBUG] Error during contract deployment:", err);
+        if (err?.code === 4001 || err?.message?.toLowerCase().includes('user denied') || err?.message?.toLowerCase().includes('cancelled') || err?.message?.toLowerCase().includes('rejected')) {
+          setGlobalError("Deployment cancelled by user.");
+        } else if (err?.code === -32603 && err?.message?.includes('No active wallet found')) {
+          setGlobalError("No wallet connected. Please connect your wallet and try again.");
+        } else if (err?.message?.includes('Extension context invalidated')) {
+          setGlobalError("Wallet extension disconnected. Please refresh the page and reconnect your wallet.");
+        } else {
+          setGlobalError("Contract error: Failed to deploy token. Please check your network and contract configuration.");
+        }
         setIsDeploying(false);
         return;
       }
@@ -558,6 +575,17 @@ const Deploy = () => {
                   error={errors.devWallet}
                   required
                   tooltip="Address to receive development fees"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <Input
+                  label="Tax Wallet"
+                  value={formData.taxWallet}
+                  onChange={(e) => handleChange("taxWallet", e.target.value)}
+                  placeholder="0x..."
+                  error={errors.taxWallet}
+                  required
+                  tooltip="Address to receive custom tax fees"
                 />
               </div>
 
@@ -859,6 +887,10 @@ const Deploy = () => {
                   {formData.buyDevFee || 0}%, LP {formData.buyLpFee || 0}%
                 </li>
                 <li>
+                  <span className="font-bold">Tax Wallet:</span>{" "}
+                  {formData.taxWallet || <span className="text-gray-500">—</span>}
+                </li>
+                <li>
                   <span className="font-bold">Sell Fees:</span> Marketing{" "}
                   {formData.sellMarketingFee || 0}%, Dev{" "}
                   {formData.sellDevFee || 0}%, LP {formData.sellLpFee || 0}%
@@ -882,8 +914,7 @@ const Deploy = () => {
                   !!errors.totalBuyFee ||
                   !!errors.totalSellFee ||
                   !isConnected ||
-                  chainId !== 56 ||
-                  insufficientFunds
+                  chainId !== 56
                 }
                 className="w-full"
                 title={
@@ -898,12 +929,7 @@ const Deploy = () => {
               >
                 {isDeploying ? "Deploying Token..." : "Deploy Token"}
               </Button>
-              {insufficientFunds && (
-                <div className="text-red-400 text-sm mt-2 text-center">
-                  You need at least 0.005 BNB for gas to deploy a token. Your
-                  current balance is {balance || "1"} BNB.
-                </div>
-              )}
+              {/* BNB balance warning removed to allow deployment with any balance */}
             </motion.div>
           </form>
         </Card>

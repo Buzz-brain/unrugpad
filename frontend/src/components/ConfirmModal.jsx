@@ -2,7 +2,7 @@ import React from 'react';
 import Modal from './Modal';
 import Button from './Button';
 
-export default function ConfirmModal({ isOpen, onClose, onConfirm, title = 'Confirm Transaction', children, details }) {
+export default function ConfirmModal({ isOpen, onClose, onConfirm, title = 'Confirm Transaction', children, details, loading = false }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
       <div className="space-y-4">
@@ -15,8 +15,8 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title = 'Conf
         )}
 
         <div className="flex gap-2 mt-3">
-          <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
-          <Button variant="primary" onClick={onConfirm} className="flex-1">Confirm</Button>
+          <Button variant="outline" onClick={onClose} className="flex-1" disabled={loading}>Cancel</Button>
+          <Button variant="primary" onClick={onConfirm} className="flex-1" loading={loading}>Confirm</Button>
         </div>
       </div>
     </Modal>

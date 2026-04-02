@@ -5,6 +5,7 @@ import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
 import EditModal from './EditModal';
 import ConfirmModal from './ConfirmModal';
 import Button from './Button';
+import Input from './Input';
 import { Copy } from 'lucide-react';
 import { ethers } from 'ethers';
 
@@ -26,6 +27,11 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
   const [limitsValues, setLimitsValues] = useState({ maxTx: '', maxWallet: '' });
   const [showEditSwap, setShowEditSwap] = useState(false);
   const [newSwap, setNewSwap] = useState('');
+  const [showTaxTab, setShowTaxTab] = useState(false);
+  const [newTaxManager, setNewTaxManager] = useState('');
+  const [newTaxWallet, setNewTaxWallet] = useState('');
+  const [newBuyFee, setNewBuyFee] = useState('');
+  const [newSellFee, setNewSellFee] = useState('');
   const [feeExemptAddress, setFeeExemptAddress] = useState('');
   const [feeExemptStatus, setFeeExemptStatus] = useState(null);
   const [checkingFeeExempt, setCheckingFeeExempt] = useState(false);
@@ -37,14 +43,22 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     setIsOwner(Boolean(account && token && token.owner && account.toLowerCase() === token.owner.toLowerCase()));
   }, [account, token]);
 
-  const [txSubmitting, setTxSubmitting] = useState(false);
+  const [activeAction, setActiveAction] = useState(null); // e.g. 'tradingPaused', 'swap', etc.
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+  const isGlobalLoading = Boolean(activeAction || confirmSubmitting);
+  const [estimatingMarketing, setEstimatingMarketing] = useState(false);
+  const [estimatingDev, setEstimatingDev] = useState(false);
+  const [estimatingBuyFees, setEstimatingBuyFees] = useState(false);
+  const [estimatingSellFees, setEstimatingSellFees] = useState(false);
+  const [estimatingSwap, setEstimatingSwap] = useState(false);
+  const [estimatingLimits, setEstimatingLimits] = useState(false);
 
   // Helper: execute pending action using ethers signer directly
   const executePendingAction = async (action) => {
     if (!action || !action.fn) return toast.error('No action to execute');
     if (!window.ethereum) return toast.error('No injected wallet found');
     try {
-      setTxSubmitting(true);
+      setConfirmSubmitting(true);
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
       const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
@@ -92,15 +106,25 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       }
     } catch (e) {
       console.error('[ADMIN] tx error', e);
-      toast.error(e?.message || 'Transaction failed');
+      if (e?.code === 4001 || e?.message?.toLowerCase().includes('user denied') || e?.message?.toLowerCase().includes('cancelled') || e?.message?.toLowerCase().includes('rejected')) {
+        toast.error('Transaction cancelled by user');
+      } else if (e?.code === -32603 && e?.message?.includes('No active wallet found')) {
+        toast.error('No wallet connected. Please connect your wallet and try again.');
+      } else if (e?.message?.includes('Extension context invalidated')) {
+        toast.error('Wallet extension disconnected. Please refresh the page and reconnect your wallet.');
+      } else {
+        toast.error(e?.message || 'Transaction failed');
+      }
     } finally {
-      setTxSubmitting(false);
+      setConfirmSubmitting(false);
+      setActiveAction(null);
     }
   };
 
   const onConfirmMarketing = async (value) => {
     if (!value || value.length !== 42) return toast.error('Invalid address');
-    // estimate gas and show confirm
+    setActiveAction('marketingWallet');
+    setEstimatingMarketing(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -112,6 +136,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Set marketing wallet to ${value}` });
       setPendingAction({ fn: 'setMarketingWallet', args: [value] });
       setShowConfirm(true);
+      setShowEditMarketing(false);
     } catch (e) {
       // fallback: attempt to send the transaction even if estimate fails
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
@@ -121,13 +146,17 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowEditMarketing(false);
+    } finally {
+      setEstimatingMarketing(false);
     }
   };
 
   const onConfirmDev = async (value) => {
     if (!value || value.length !== 42) return toast.error('Invalid address');
+    setActiveAction('devWallet');
+    setEstimatingDev(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -139,6 +168,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Set dev wallet to ${value}` });
       setPendingAction({ fn: 'setDevWallet', args: [value] });
       setShowConfirm(true);
+      setShowEditDev(false);
     } catch (e) {
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
       try {
@@ -147,8 +177,10 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowEditDev(false);
+    } finally {
+      setEstimatingDev(false);
     }
   };
 
@@ -161,6 +193,8 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     const lp = Number(obj.lp || 0);
     // validation
     if (m < 0 || d < 0 || lp < 0) return toast.error('Fees must be >= 0');
+    setActiveAction('buyFees');
+    setEstimatingBuyFees(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -172,6 +206,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Set buy fees to ${m}/${d}/${lp}` });
       setPendingAction({ fn: 'setBuyFees', args: [m, d, lp] });
       setShowConfirm(true);
+      setShowBuyFees(false);
     } catch (e) {
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
       try {
@@ -180,8 +215,10 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowBuyFees(false);
+    } finally {
+      setEstimatingBuyFees(false);
     }
   };
 
@@ -193,6 +230,8 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     const d = Number(obj.dev || 0);
     const lp = Number(obj.lp || 0);
     if (m < 0 || d < 0 || lp < 0) return toast.error('Fees must be >= 0');
+    setActiveAction('sellFees');
+    setEstimatingSellFees(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -204,6 +243,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Set sell fees to ${m}/${d}/${lp}` });
       setPendingAction({ fn: 'setSellFees', args: [m, d, lp] });
       setShowConfirm(true);
+      setShowSellFees(false);
     } catch (e) {
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
       try {
@@ -212,8 +252,10 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowSellFees(false);
+    } finally {
+      setEstimatingSellFees(false);
     }
   };
 
@@ -259,6 +301,8 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     try { obj = JSON.parse(jsonString); } catch (e) { return toast.error('Invalid input'); }
     const maxTx = BigInt(obj.maxTx || 0);
     const maxWallet = BigInt(obj.maxWallet || 0);
+    setActiveAction('limits');
+    setEstimatingLimits(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -270,6 +314,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Update limits Tx:${maxTx} Wallet:${maxWallet}` });
       setPendingAction({ fn: 'updateLimits', args: [maxTx, maxWallet] });
       setShowConfirm(true);
+      setShowLimits(false);
     } catch (e) {
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
       try {
@@ -278,13 +323,67 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowLimits(false);
+    } finally {
+      setEstimatingLimits(false);
+    }
+  };
+
+  const onConfirmRemoveLimits = async () => {
+    setActiveAction('removeLimits');
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
+      const gas = await contract.estimateGas.removeLimits();
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
+      const cost = ethers.utils.formatEther(gas.mul(gasPrice));
+      setConfirmDetails({ gas, cost, label: 'Remove transaction and wallet limits' });
+      setPendingAction({ fn: 'removeLimits', args: [] });
+      setShowConfirm(true);
+    } catch (e) {
+      toast.warn('Could not estimate gas precisely; sending transaction anyway.');
+      try {
+        await executePendingAction({ fn: 'removeLimits', args: [] });
+      } catch (sendErr) {
+        console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
+        toast.error(sendErr?.message || 'Transaction failed after estimation error');
+      }
+      setActiveAction(null);
+    }
+  };
+
+  const onConfirmTradingPaused = async (newVal) => {
+    setActiveAction('tradingPaused');
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
+      const gas = await contract.estimateGas.setTradingPaused(newVal);
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
+      const cost = ethers.utils.formatEther(gas.mul(gasPrice));
+      setConfirmDetails({ gas, cost, label: `Set tradingPaused → ${newVal}` });
+      setPendingAction({ fn: 'setTradingPaused', args: [newVal] });
+      setShowConfirm(true);
+    } catch (e) {
+      toast.warn('Could not estimate gas precisely; sending transaction anyway.');
+      try {
+        await executePendingAction({ fn: 'setTradingPaused', args: [newVal] });
+      } catch (sendErr) {
+        console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
+        toast.error(sendErr?.message || 'Transaction failed after estimation error');
+      }
+      setActiveAction(null);
     }
   };
 
   const onConfirmSwap = async (value) => {
     if (!value) return toast.error('Invalid value');
+    setActiveAction('swap');
+    setEstimatingSwap(true);
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -297,6 +396,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       setConfirmDetails({ gas, cost, label: `Set swap threshold to ${value}` });
       setPendingAction({ fn: 'setSwapTokensAtAmount', args: [parsed] });
       setShowConfirm(true);
+      setShowEditSwap(false);
     } catch (e) {
       toast.warn('Could not estimate gas precisely; sending transaction anyway.');
       try {
@@ -305,8 +405,119 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
-    } finally {
+      setActiveAction(null);
       setShowEditSwap(false);
+    } finally {
+      setEstimatingSwap(false);
+    }
+  };
+
+  const onConfirmTaxManager = async (value) => {
+    if (!value || value.length !== 42) return toast.error('Invalid address');
+    setActiveAction('taxManager');
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
+      const gas = await contract.estimateGas.setTaxManager(value);
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
+      const cost = ethers.utils.formatEther(gas.mul(gasPrice));
+      setConfirmDetails({ gas, cost, label: `Transfer tax manager to ${value}` });
+      setPendingAction({ fn: 'setTaxManager', args: [value] });
+      setShowConfirm(true);
+      setShowTaxTab(false);
+    } catch (e) {
+      toast.warn('Could not estimate gas precisely; sending transaction anyway.');
+      try {
+        await executePendingAction({ fn: 'setTaxManager', args: [value] });
+      } catch (sendErr) {
+        console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
+        toast.error(sendErr?.message || 'Transaction failed after estimation error');
+      }
+      setActiveAction(null);
+      setShowTaxTab(false);
+    }
+  };
+
+  const onConfirmTaxWallet = async (value) => {
+    if (!value || value.length !== 42) return toast.error('Invalid address');
+    setActiveAction('taxWallet');
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
+      const gas = await contract.estimateGas.setTaxWallet(value);
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
+      const cost = ethers.utils.formatEther(gas.mul(gasPrice));
+      setConfirmDetails({ gas, cost, label: `Set tax wallet to ${value}` });
+      setPendingAction({ fn: 'setTaxWallet', args: [value] });
+      setShowConfirm(true);
+      setShowTaxTab(false);
+    } catch (e) {
+      toast.warn('Could not estimate gas precisely; sending transaction anyway.');
+      try {
+        await executePendingAction({ fn: 'setTaxWallet', args: [value] });
+      } catch (sendErr) {
+        console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
+        toast.error(sendErr?.message || 'Transaction failed after estimation error');
+      }
+      setActiveAction(null);
+      setShowTaxTab(false);
+    }
+  };
+
+  const onConfirmReduceTax = async (buy, sell) => {
+    const buyVal = Number(buy);
+    const sellVal = Number(sell);
+    if (isNaN(buyVal) || isNaN(sellVal)) return toast.error('Invalid values');
+    if (buyVal < 0 || sellVal < 0) return toast.error('Values must be non-negative');
+    if (buyVal > 30 || sellVal > 30) return toast.error('Values must be <= 30');
+
+    setActiveAction('reduceTax');
+    // Prefer specialized contract function if exists
+    const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, (new ethers.providers.Web3Provider(window.ethereum)).getSigner());
+    if (contract.reduceCustomTax) {
+      setConfirmDetails({ label: `Reduce tax to buy:${buyVal}% sell:${sellVal}%` });
+      setPendingAction({ fn: 'reduceCustomTax', args: [buyVal, sellVal] });
+      setShowConfirm(true);
+    } else {
+      // Fallback to standard fee setters
+      setConfirmDetails({ label: `Set buy fees ${buyVal} and sell fees ${sellVal}` });
+      setPendingAction({ fn: 'setBuyFees', args: [buyVal, 0, 0] });
+      setShowConfirm(true);
+      // Note: the user may need to also adjust sell fees separately
+    }
+    setShowTaxTab(false);
+  };
+
+  const onConfirmRenounceOwnership = async () => {
+    setActiveAction('renounceOwnership');
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
+      console.log('[ADMIN] Attempting to estimate gas for renounceOwnership');
+      const gas = await contract.estimateGas.renounceOwnership();
+      const feeData = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
+      const cost = ethers.utils.formatEther(gas.mul(gasPrice));
+      console.log('[ADMIN] Gas estimate succeeded:', { gas: gas.toString(), cost });
+      setConfirmDetails({ gas, cost, label: 'Renounce ownership (tax role remains)' });
+      setPendingAction({ fn: 'renounceOwnership', args: [] });
+      setShowConfirm(true);
+      setShowTaxTab(false);
+    } catch (e) {
+      console.error('[ADMIN] Gas estimate failed for renounceOwnership:', e);
+      // Fallback: allow user to proceed without gas estimate
+      console.log('[ADMIN] Proceeding without gas estimate');
+      setConfirmDetails({ label: 'Renounce ownership (tax role remains)' });
+      setPendingAction({ fn: 'renounceOwnership', args: [] });
+      setShowConfirm(true);
+      toast.info('Ready to renounce ownership. Please confirm in MetaMask.');
+      setActiveAction(null);
+      setShowTaxTab(false);
     }
   };
 
@@ -314,6 +525,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     if (!address) return toast.error('Please enter an address');
     if (address.length !== 42) return toast.error('Invalid address');
     setCheckingFeeExempt(true);
+    setActiveAction('checkFeeExempt');
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, provider);
@@ -325,12 +537,14 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
       toast.error('Failed to check exemption');
     } finally {
       setCheckingFeeExempt(false);
+      setActiveAction(null);
     }
   };
 
   const toggleFeeExempt = async (address, newVal) => {
     if (!address) return toast.error('Please enter an address');
     if (address.length !== 42) return toast.error('Invalid address');
+    setActiveAction('feeExempt');
     try {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
@@ -350,17 +564,47 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
         console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
         toast.error(sendErr?.message || 'Transaction failed after estimation error');
       }
+      setActiveAction(null);
+    } finally {
+      // no additional state needed here
     }
+  };
+
+  const handleConfirmCancel = () => {
+    setShowConfirm(false);
+    setPendingAction(null);
+    setConfirmDetails(null);
+    setActiveAction(null);
+    setConfirmSubmitting(false);
+    setEstimatingMarketing(false);
+    setEstimatingDev(false);
+    setEstimatingBuyFees(false);
+    setEstimatingSellFees(false);
+    setEstimatingSwap(false);
+    setEstimatingLimits(false);
   };
 
   const confirmAndSend = async () => {
     if (!pendingAction) return toast.error('No pending action');
-    setShowConfirm(false);
+    setConfirmSubmitting(true);
+    setEstimatingMarketing(false);
+    setEstimatingDev(false);
+    setEstimatingBuyFees(false);
+    setEstimatingSellFees(false);
+    setEstimatingSwap(false);
+    setEstimatingLimits(false);
+
     const action = pendingAction;
     setPendingAction(null);
-    setConfirmDetails(null);
-    // Always send transaction, even if gas estimation failed
-    await executePendingAction(action);
+
+    try {
+      await executePendingAction(action);
+      setShowConfirm(false); // Close modal only after successful transaction
+      setConfirmDetails(null); // Clear details after modal closes
+      setActiveAction(null);
+    } finally {
+      setConfirmSubmitting(false);
+    }
   };
 
   if (!token) return null;
@@ -389,43 +633,20 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
 
                 <div className="mb-3">
                   <nav className="flex gap-2 text-sm">
-                    {['General','Fees','Wallets','Limits','Exemptions'].map(tab => (
+                    {['General','Fees','Wallets','Tax','Limits','Exemptions'].map(tab => (
                       <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-1 rounded ${activeTab===tab ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>{tab}</button>
                     ))}
                   </nav>
                 </div>
 
-                <div className="space-y-4 max-h-[60vh] overflow-auto">
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                   {activeTab === 'General' && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-sm">
                         <div className="text-gray-400">Trading Paused</div>
                         <div className="flex items-center gap-2">
                           <div className={`font-mono ${token.tradingPaused ? 'text-yellow-400' : 'text-green-400'}`}>{token.tradingPaused ? 'Yes' : 'No'}</div>
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const newVal = !token.tradingPaused;
-                            (async () => {
-                              try {
-                                const provider = new ethers.providers.Web3Provider(window.ethereum);
-                                const signer = provider.getSigner();
-                                const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, signer);
-                                const gas = await contract.estimateGas.setTradingPaused(newVal);
-                                const feeData = await provider.getFeeData();
-                                const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || ethers.utils.parseUnits('5', 'gwei');
-                                const cost = ethers.utils.formatEther(gas.mul(gasPrice));
-                                setConfirmDetails({ gas, cost, label: `Set tradingPaused → ${newVal}` });
-                                setPendingAction({ fn: 'setTradingPaused', args: [newVal] });
-                                setShowConfirm(true);
-                              } catch (e) {
-                                try {
-                                  await executePendingAction({ fn: 'setTradingPaused', args: [newVal] });
-                                } catch (sendErr) {
-                                  console.error('[ADMIN] direct send failed after estimate failure:', sendErr);
-                                  toast.error(sendErr?.message || 'Transaction failed after estimation error');
-                                }
-                              }
-                            })();
-                          }}>Toggle</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'tradingPaused'} disabled={isGlobalLoading && activeAction !== 'tradingPaused'} onClick={() => onConfirmTradingPaused(!token.tradingPaused)}>Toggle</Button>
                         </div>
                       </div>
 
@@ -433,7 +654,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                         <div className="text-gray-400">Swap Threshold</div>
                         <div className="flex items-center gap-2">
                           <div className="text-white font-mono">{token.swapTokensAtAmount || '—'}</div>
-                          <Button size="sm" variant="outline" onClick={() => { setNewSwap(token.swapTokensAtAmount || ''); setShowEditSwap(true); }}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'swap'} disabled={isGlobalLoading && activeAction !== 'swap'} onClick={() => { setNewSwap(token.swapTokensAtAmount || ''); setShowEditSwap(true); }}>Edit</Button>
                         </div>
                       </div>
                     </div>
@@ -445,7 +666,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                         <div className="text-gray-400">Buy Fees (mkt/dev/lp)</div>
                         <div className="flex items-center gap-2">
                           <div className="text-white font-mono">{token.buyFees ? `${token.buyFees.marketing}/${token.buyFees.dev}/${token.buyFees.lp}` : '—'}</div>
-                          <Button size="sm" variant="outline" onClick={() => setShowBuyFees(true)}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'buyFees'} disabled={isGlobalLoading && activeAction !== 'buyFees'} onClick={() => setShowBuyFees(true)}>Edit</Button>
                         </div>
                       </div>
 
@@ -453,7 +674,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                         <div className="text-gray-400">Sell Fees (mkt/dev/lp)</div>
                         <div className="flex items-center gap-2">
                           <div className="text-white font-mono">{token.sellFees ? `${token.sellFees.marketing}/${token.sellFees.dev}/${token.sellFees.lp}` : '—'}</div>
-                          <Button size="sm" variant="outline" onClick={() => setShowSellFees(true)}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'sellFees'} disabled={isGlobalLoading && activeAction !== 'sellFees'} onClick={() => setShowSellFees(true)}>Edit</Button>
                         </div>
                       </div>
                     </div>
@@ -467,7 +688,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                           <div className="text-white font-mono flex items-center gap-1">{token.marketingWallet?.slice(0,6)}...{token.marketingWallet?.slice(-4)}
                             <button className="text-gray-400 hover:text-cyan-400 focus:outline-none" onClick={() => { navigator.clipboard.writeText(token.marketingWallet); toast.success('Address copied to clipboard!'); }} aria-label="Copy marketing wallet"><Copy size={14} /></button>
                           </div>
-                          <Button size="sm" variant="outline" onClick={() => { setNewMarketing(token.marketingWallet || ''); setShowEditMarketing(true); }}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'marketingWallet'} disabled={isGlobalLoading && activeAction !== 'marketingWallet'} onClick={() => { setNewMarketing(token.marketingWallet || ''); setShowEditMarketing(true); }}>Edit</Button>
                         </div>
                       </div>
 
@@ -477,8 +698,100 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                           <div className="text-white font-mono flex items-center gap-1">{token.devWallet?.slice(0,6)}...{token.devWallet?.slice(-4)}
                             <button className="text-gray-400 hover:text-cyan-400 focus:outline-none" onClick={() => { navigator.clipboard.writeText(token.devWallet); toast.success('Address copied to clipboard!'); }} aria-label="Copy dev wallet"><Copy size={14} /></button>
                           </div>
-                          <Button size="sm" variant="outline" onClick={() => { setNewDev(token.devWallet || ''); setShowEditDev(true); }}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'devWallet'} disabled={isGlobalLoading && activeAction !== 'devWallet'} onClick={() => { setNewDev(token.devWallet || ''); setShowEditDev(true); }}>Edit</Button>
                         </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="text-gray-400">Tax Wallet</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-white font-mono flex items-center gap-1">{token.taxWallet ? `${token.taxWallet.slice(0,6)}...${token.taxWallet.slice(-4)}` : '—'}
+                            {token.taxWallet && <button className="text-gray-400 hover:text-cyan-400 focus:outline-none" onClick={() => { navigator.clipboard.writeText(token.taxWallet); toast.success('Address copied to clipboard!'); }} aria-label="Copy tax wallet"><Copy size={14} /></button>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="text-gray-400">Tax Manager</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-white font-mono flex items-center gap-1">{token.taxManager ? `${token.taxManager.slice(0,6)}...${token.taxManager.slice(-4)}` : '—'}
+                            {token.taxManager && <button className="text-gray-400 hover:text-cyan-400 focus:outline-none" onClick={() => { navigator.clipboard.writeText(token.taxManager); toast.success('Address copied to clipboard!'); }} aria-label="Copy tax manager"><Copy size={14} /></button>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'Tax' && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-gray-400">Tax configuration and owner/tax-manager controls.</div>
+                      <div className="flex flex-col gap-2">
+                        {!token.ownershipRenounced ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => onConfirmRenounceOwnership()} disabled={!isOwner || token.ownershipRenounced || isGlobalLoading} loading={activeAction === 'renounceOwnership'}>
+                              Renounce Ownership
+                            </Button>
+                            <div className="text-xs text-gray-500 mt-2">
+                              After renouncing ownership, you can transfer tax management and reduce taxes.
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-xs text-green-400 mb-2">
+                            ✓ Ownership renounced - tax management controls available
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Input
+                            label="New Tax Manager"
+                            value={newTaxManager}
+                            onChange={(e) => setNewTaxManager(e.target.value)}
+                            placeholder="0x..."
+                          />
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            loading={activeAction === 'taxManager'}
+                            disabled={!token.ownershipRenounced || (isGlobalLoading && activeAction !== 'taxManager')}
+                            onClick={() => onConfirmTaxManager(newTaxManager)}
+                          >
+                            Transfer Tax Manager
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Input
+                            label="New Tax Wallet"
+                            value={newTaxWallet}
+                            onChange={(e) => setNewTaxWallet(e.target.value)}
+                            placeholder="0x..."
+                          />
+                          <Button size="sm" variant="primary" loading={activeAction === 'taxWallet'} disabled={isGlobalLoading && activeAction !== 'taxWallet'} onClick={() => onConfirmTaxWallet(newTaxWallet)}>
+                            Set Tax Wallet
+                          </Button>
+                        </div>
+
+                        {token.ownershipRenounced && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <Input
+                                label="Reduce Buy Tax (percent)"
+                                value={newBuyFee}
+                                onChange={(e) => setNewBuyFee(e.target.value)}
+                                placeholder="0-30"
+                              />
+                              <Input
+                                label="Reduce Sell Tax (percent)"
+                                value={newSellFee}
+                                onChange={(e) => setNewSellFee(e.target.value)}
+                                placeholder="0-30"
+                              />
+                            </div>
+                            <Button size="sm" variant="outline" loading={activeAction === 'reduceTax'} disabled={isGlobalLoading && activeAction !== 'reduceTax'} onClick={() => onConfirmReduceTax(newBuyFee, newSellFee)}>
+                              Reduce Tax
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -489,8 +802,8 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                         <div className="text-gray-400">Limits</div>
                         <div className="flex items-center gap-2">
                           <div className="text-white font-mono">Tx: {token.maxTransactionAmount || '—'} / Wallet: {token.maxWalletAmount || '—'}</div>
-                          <Button size="sm" variant="outline" onClick={() => setShowLimits(true)}>Edit</Button>
-                          <Button size="sm" variant="outline" onClick={() => { setPrepareArgs({ fn: 'removeLimits', args: [] }); setShouldWrite(true); }}>Remove</Button>
+                          <Button size="sm" variant="outline" loading={isGlobalLoading} disabled={isGlobalLoading} onClick={() => setShowLimits(true)}>Edit</Button>
+                          <Button size="sm" variant="outline" loading={activeAction === 'removeLimits'} disabled={isGlobalLoading && activeAction !== 'removeLimits'} onClick={() => onConfirmRemoveLimits()}>Remove</Button>
                         </div>
                       </div>
                     </div>
@@ -500,8 +813,8 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <input className="bg-gray-900 border border-gray-800 rounded px-2 py-1 text-white w-60" placeholder="0x..." value={feeExemptAddress} onChange={(e) => { setFeeExemptAddress(e.target.value); setFeeExemptStatus(null); }} />
-                        <Button size="sm" variant="outline" onClick={() => checkFeeExempt(feeExemptAddress)} disabled={checkingFeeExempt || !feeExemptAddress}>Check</Button>
-                        <Button size="sm" variant="primary" onClick={() => toggleFeeExempt(feeExemptAddress, !(feeExemptStatus === true))} disabled={!feeExemptAddress}>{feeExemptStatus ? 'Unset Exempt' : 'Set Exempt'}</Button>
+                        <Button size="sm" variant="outline" loading={checkingFeeExempt || activeAction === 'checkFeeExempt'} onClick={() => checkFeeExempt(feeExemptAddress)} disabled={checkingFeeExempt || !feeExemptAddress || isGlobalLoading}>Check</Button>
+                        <Button size="sm" variant="primary" loading={activeAction === 'feeExempt'} onClick={() => toggleFeeExempt(feeExemptAddress, !(feeExemptStatus === true))} disabled={!feeExemptAddress || isGlobalLoading}>{feeExemptStatus ? 'Unset Exempt' : 'Set Exempt'}</Button>
                       </div>
                       {feeExemptStatus !== null && (<div className="text-xs text-gray-400">Address is {feeExemptStatus ? 'fee-exempt' : 'not fee-exempt'}</div>)}
                     </div>
@@ -509,10 +822,10 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                 </div>
 
                 {/* Keep existing edit modals and confirm modal available inside modal context */}
-                <EditModal isOpen={showEditMarketing} onClose={() => setShowEditMarketing(false)} title={`Edit Marketing Wallet: ${token.symbol}`} initialValue={newMarketing} onConfirm={onConfirmMarketing} confirmLabel="Set Wallet" />
-                <EditModal isOpen={showEditDev} onClose={() => setShowEditDev(false)} title={`Edit Dev Wallet: ${token.symbol}`} initialValue={newDev} onConfirm={onConfirmDev} confirmLabel="Set Wallet" />
+                <EditModal isOpen={showEditMarketing} onClose={() => setShowEditMarketing(false)} title={`Edit Marketing Wallet: ${token.symbol}`} initialValue={newMarketing} onConfirm={onConfirmMarketing} confirmLabel="Set Wallet" loading={estimatingMarketing || confirmSubmitting} />
+                <EditModal isOpen={showEditDev} onClose={() => setShowEditDev(false)} title={`Edit Dev Wallet: ${token.symbol}`} initialValue={newDev} onConfirm={onConfirmDev} confirmLabel="Set Wallet" loading={estimatingDev || confirmSubmitting} />
 
-                <EditModal isOpen={showBuyFees} onClose={() => setShowBuyFees(false)} title={`Edit Buy Fees: ${token.symbol}`} initialValue={JSON.stringify({ marketing: token.buyFees?.marketing || 0, dev: token.buyFees?.dev || 0, lp: token.buyFees?.lp || 0 })} onConfirm={validateAndConfirmBuyFees} confirmLabel="Set Buy Fees" validate={(value) => {
+                <EditModal isOpen={showBuyFees} onClose={() => setShowBuyFees(false)} title={`Edit Buy Fees: ${token.symbol}`} loading={estimatingBuyFees || confirmSubmitting} initialValue={JSON.stringify({ marketing: token.buyFees?.marketing || 0, dev: token.buyFees?.dev || 0, lp: token.buyFees?.lp || 0 })} onConfirm={validateAndConfirmBuyFees} confirmLabel="Set Buy Fees" validate={(value) => {
                   try { const obj = JSON.parse(value || '{}');
                     const m = Number(obj.marketing || 0);
                     const d = Number(obj.dev || 0);
@@ -552,7 +865,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                   }}
                 </EditModal>
 
-                <EditModal isOpen={showSellFees} onClose={() => setShowSellFees(false)} title={`Edit Sell Fees: ${token.symbol}`} initialValue={JSON.stringify({ marketing: token.sellFees?.marketing || 0, dev: token.sellFees?.dev || 0, lp: token.sellFees?.lp || 0 })} onConfirm={validateAndConfirmSellFees} confirmLabel="Set Sell Fees" validate={(value) => {
+                <EditModal isOpen={showSellFees} onClose={() => setShowSellFees(false)} title={`Edit Sell Fees: ${token.symbol}`} loading={estimatingSellFees || confirmSubmitting} initialValue={JSON.stringify({ marketing: token.sellFees?.marketing || 0, dev: token.sellFees?.dev || 0, lp: token.sellFees?.lp || 0 })} onConfirm={validateAndConfirmSellFees} confirmLabel="Set Sell Fees" validate={(value) => {
                   try { const obj = JSON.parse(value || '{}');
                     const m = Number(obj.marketing || 0);
                     const d = Number(obj.dev || 0);
@@ -592,7 +905,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                   }}
                 </EditModal>
 
-                <EditModal isOpen={showLimits} onClose={() => setShowLimits(false)} title={`Update Limits: ${token.symbol}`} initialValue={JSON.stringify({ maxTx: token.maxTransactionAmount || 0, maxWallet: token.maxWalletAmount || 0 })} onConfirm={onConfirmLimits} confirmLabel="Update Limits">
+                <EditModal isOpen={showLimits} onClose={() => setShowLimits(false)} title={`Update Limits: ${token.symbol}`} loading={estimatingLimits || confirmSubmitting} initialValue={JSON.stringify({ maxTx: token.maxTransactionAmount || 0, maxWallet: token.maxWalletAmount || 0 })} onConfirm={onConfirmLimits} confirmLabel="Update Limits">
                   {({ value, setValue }) => {
                     let obj = {};
                     try { obj = JSON.parse(value || '{}'); } catch (e) { obj = { maxTx: '', maxWallet: '' }; }
@@ -606,9 +919,9 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
                   }}
                 </EditModal>
 
-                <EditModal isOpen={showEditSwap} onClose={() => setShowEditSwap(false)} title={`Set Swap Threshold: ${token.symbol}`} initialValue={newSwap} onConfirm={onConfirmSwap} confirmLabel="Set Threshold" />
+                <EditModal isOpen={showEditSwap} onClose={() => setShowEditSwap(false)} title={`Set Swap Threshold: ${token.symbol}`} initialValue={newSwap} onConfirm={onConfirmSwap} confirmLabel="Set Threshold" loading={estimatingSwap || confirmSubmitting} />
 
-                <ConfirmModal isOpen={showConfirm} onClose={() => setShowConfirm(false)} onConfirm={confirmAndSend} details={confirmDetails}><div className="text-sm text-white">{confirmDetails?.label}</div></ConfirmModal>
+                <ConfirmModal isOpen={showConfirm} onClose={handleConfirmCancel} onConfirm={confirmAndSend} details={confirmDetails} loading={confirmSubmitting}><div className="text-sm text-white">{confirmDetails?.label}</div></ConfirmModal>
               </div>
             </div>
           )}

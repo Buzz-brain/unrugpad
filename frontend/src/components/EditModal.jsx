@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Modal from './Modal';
 import Button from './Button';
 
-export default function EditModal({ isOpen, onClose, title, initialValue = '', onConfirm, confirmLabel = 'Save', children, validate }) {
+export default function EditModal({ isOpen, onClose, title, initialValue = '', onConfirm, confirmLabel = 'Save', children, validate, loading = false }) {
   const [value, setValue] = useState(initialValue);
 
   // update internal value when initialValue changes
@@ -28,14 +28,15 @@ export default function EditModal({ isOpen, onClose, title, initialValue = '', o
         )}
 
         <div className="flex gap-2 mt-2">
-          <Button variant="outline" onClick={onClose} className="flex-1">
+          <Button variant="outline" onClick={onClose} className="flex-1" disabled={loading}>
             Cancel
           </Button>
           <Button
             variant="primary"
             onClick={() => onConfirm(value)}
             className="flex-1"
-            disabled={!validation.valid}
+            disabled={!validation.valid || loading}
+            loading={loading}
           >
             {confirmLabel}
           </Button>

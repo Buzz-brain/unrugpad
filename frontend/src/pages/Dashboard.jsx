@@ -22,6 +22,10 @@ import AdminPanel from '../components/AdminPanel';
 function AdvancedTokenDetailsModal({ token, isOpen, onClose }) {
   if (!token) return null;
   const advancedFields = [
+    { label: 'Tax Wallet', value: token.taxWallet },
+    { label: 'Tax Manager', value: token.taxManager },
+    { label: 'Ownership Renounced', value: token.ownershipRenounced ? 'Yes' : 'No' },
+    { label: 'Max Tax Allowed', value: token.maxTaxAllowed },
     { label: 'Buy Fee', value: token.buyFee },
     { label: 'Sell Fee', value: token.sellFee },
     { label: 'Buy Fees (Struct)', value: token.buyFees && typeof token.buyFees === 'object' ? JSON.stringify(token.buyFees) : token.buyFees },
@@ -194,9 +198,9 @@ const Dashboard = () => {
           const [
             name, symbol, totalSupply, balance, decimals, owner, tradingPaused, buyFee, sellFee, buyFees, sellFees,
             platformFee, getTotalBuyFee, getTotalSellFee, maxTransactionAmount, maxWalletAmount, limitsInEffect,
-            marketingWallet, devWallet, platformWallet, factory, pancakePair, pancakeRouter, deploymentMetadata,
+            marketingWallet, devWallet, taxWallet, taxManager, platformWallet, factory, pancakePair, pancakeRouter, deploymentMetadata,
             circulatingSupply, swapTokensAtAmount, tokensForMarketing, tokensForDev, tokensForLiquidity, tokensForPlatform,
-            tokensForBuyFee, tokensForSellFee, version, isFeeExempt, userIsFeeExempt
+            tokensForBuyFee, tokensForSellFee, maxFeePercentage, version, isFeeExempt, userIsFeeExempt
           ] = await Promise.all([
             contract.name().catch(() => null),
             contract.symbol().catch(() => null),
@@ -217,6 +221,8 @@ const Dashboard = () => {
             contract.limitsInEffect().catch(() => null),
             contract.marketingWallet().catch(() => null),
             contract.devWallet().catch(() => null),
+            contract.taxWallet ? contract.taxWallet().catch(() => null) : Promise.resolve(null),
+            contract.taxManager ? contract.taxManager().catch(() => null) : Promise.resolve(null),
             contract.platformWallet().catch(() => null),
             contract.factory().catch(() => null),
             contract.pancakePair().catch(() => null),
@@ -230,6 +236,7 @@ const Dashboard = () => {
             contract.tokensForPlatform().catch(() => null),
             contract.tokensForBuyFee().catch(() => null),
             contract.tokensForSellFee().catch(() => null),
+            contract.MAX_FEE_PERCENTAGE ? contract.MAX_FEE_PERCENTAGE().catch(() => null) : Promise.resolve(null),
             contract.VERSION ? contract.VERSION().catch(() => null) : Promise.resolve(null),
             contract.isFeeExempt ? contract.isFeeExempt(account).catch(() => null) : Promise.resolve(null),
             contract.isExcludedFromFees ? contract.isExcludedFromFees(account).catch(() => null) : Promise.resolve(null)
@@ -287,6 +294,10 @@ const Dashboard = () => {
             limitsInEffect: limitsInEffect,
             marketingWallet: marketingWallet,
             devWallet: devWallet,
+            taxWallet: taxWallet,
+            taxManager: taxManager,
+            ownershipRenounced: owner ? owner.toLowerCase() === ethers.constants.AddressZero : false,
+            maxTaxAllowed: norm(maxFeePercentage),
             platformWallet: platformWallet,
             factory: factory,
             pancakePair: pancakePair,
@@ -344,6 +355,60 @@ const Dashboard = () => {
       setIsFetchingDetails(false);
     };
   }, [tokens, signer, provider, account]);
+
+  useEffect(() => {
+    if (!liveTokenDetails || !liveTokenDetails.length) return;
+
+    const providerOrSigner = signer || provider;
+    if (!providerOrSigner || !window.ethereum) return;
+
+    const subscribers = [];
+    liveTokenDetails.forEach((token) => {
+      try {
+        const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, providerOrSigner);
+
+        if (contract.filters && contract.filters.TaxManagerChanged) {
+          const handler = (oldManager, newManager) => {
+            toast.info(`Tax Manager changed for ${token.symbol}: ${oldManager} -> ${newManager}`);
+            setLiveTokenDetails((prev) => prev.map((t) => t.address === token.address ? { ...t, taxManager: newManager } : t));
+          };
+          contract.on('TaxManagerChanged', handler);
+          subscribers.push({ contract, event: 'TaxManagerChanged', handler });
+        }
+
+        if (contract.filters && contract.filters.TaxReduced) {
+          const handler = (newBuyFee, newSellFee) => {
+            toast.info(`Tax reduced for ${token.symbol}: buy ${newBuyFee}%, sell ${newSellFee}%`);
+            setLiveTokenDetails((prev) => prev.map((t) => t.address === token.address ? {
+              ...t,
+              buyFee: newBuyFee.toString(),
+              sellFee: newSellFee.toString(),
+            } : t));
+          };
+          contract.on('TaxReduced', handler);
+          subscribers.push({ contract, event: 'TaxReduced', handler });
+        }
+
+        if (contract.filters && contract.filters.OwnershipRenounced) {
+          const handler = () => {
+            toast.info(`Ownership renounced for ${token.symbol}`);
+            setLiveTokenDetails((prev) => prev.map((t) => t.address === token.address ? { ...t, ownershipRenounced: true } : t));
+          };
+          contract.on('OwnershipRenounced', handler);
+          subscribers.push({ contract, event: 'OwnershipRenounced', handler });
+        }
+
+      } catch (err) {
+        console.warn('[DASHBOARD] Listener setup skipped for token', token.address, err);
+      }
+    });
+
+    return () => {
+      subscribers.forEach(({ contract, event, handler }) => {
+        try { contract.off(event, handler); } catch (e) { }
+      });
+    };
+  }, [liveTokenDetails, signer, provider]);
 
   const openModal = (type, token) => {
     setModalType(type);
@@ -631,6 +696,18 @@ const Dashboard = () => {
                       <Copy size={16} />
                     </button>
                   </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Tax Manager:</span>
+                  <span className="text-white font-mono">{token.taxManager ? `${token.taxManager.slice(0,6)}...${token.taxManager.slice(-4)}` : '—'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Ownership Renounced:</span>
+                  <span className={`font-mono ${token.ownershipRenounced ? 'text-yellow-400' : 'text-green-400'}`}>{token.ownershipRenounced ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Max Tax Allowed:</span>
+                  <span className="text-white font-mono">{token.maxTaxAllowed || '—'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">Paused:</span>
