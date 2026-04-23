@@ -500,9 +500,18 @@ const Dashboard = () => {
     setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: 'verifying' } : t));
     try {
       const res = await triggerVerification(address);
-      const newStatus = res.status || 'verified';
-      setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: newStatus, verifyExplorer: res.explorerUrl || t.verifyExplorer } : t));
-      toast.success(`Verification ${newStatus} for ${address}`);
+      // triggerVerification returns full axios response; prefer semantic status in body
+      const body = res?.data || {};
+      const newStatus = res?.status === 202 || body.status === 'verifying' ? 'verifying' : (body.status || (body.verified ? 'verified' : 'pending'));
+      const explorer = body.explorerUrl || body.data?.explorerUrl || null;
+      setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: newStatus, verifyExplorer: explorer || t.verifyExplorer } : t));
+      if (newStatus === 'verified' || newStatus === 'already_verified') {
+        toast.success(`Verification successful for ${address}`);
+      } else if (newStatus === 'verifying') {
+        toast.info(`Verification started for ${address}`);
+      } else {
+        toast.info(`Verification status: ${newStatus} for ${address}`);
+      }
     } catch (err) {
       console.error('[DASHBOARD] Manual verify failed', err);
       setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: 'failed' } : t));
