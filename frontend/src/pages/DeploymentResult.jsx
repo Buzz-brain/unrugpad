@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
+import { triggerVerification, checkVerificationStatus } from '../utils/api';
 
 import deployedAddresses from '../../../backend/deployed_addresses.json';
 
@@ -50,10 +51,10 @@ const DeploymentResult = () => {
   const explorerBase = explorerUrls[network] || explorerUrls['sepolia'];
 
   const [globalError, setGlobalError] = useState('');
-  const [verifyStatus, setVerifyStatus] = useState('idle'); // idle, pending, ok, already_verified, api_key_missing, failed
-  const [verifyOutput, setVerifyOutput] = useState('');
+  const [verifyStatus, setVerifyStatus] = useState('pending');
+  // "pending" | "verifying" | "verified" | "already_verified" | "failed"
+  const [implAddress, setImplAddress] = useState(null);
   const [verifyExplorer, setVerifyExplorer] = useState(null);
-  
 
   useEffect(() => {
     if (!location.state?.deployment) {
@@ -61,14 +62,54 @@ const DeploymentResult = () => {
     }
   }, [location]);
 
-  // For tokens created via our factory, they use a verified implementation.
-  // Mark the token as verified immediately to avoid extra API calls and rate limits.
+  // Trigger verification in background as soon as proxy address is available
   useEffect(() => {
-    if (deployment && deployment.address) {
-      setVerifyStatus('already_verified');
-      setVerifyExplorer(`${explorerBase}${deployment.address}#code`);
-    }
-  }, [deployment]);
+    if (!deployment?.address) return;
+
+    const runVerification = async () => {
+      setVerifyStatus('verifying');
+      try {
+        const resp = await triggerVerification(deployment.address);
+        const result = resp?.data || {};
+        const statusVal = resp?.status === 202 || result.status === 'verifying' ? 'verifying' : (result.status || (result.verified ? 'verified' : 'pending'));
+        setVerifyStatus(statusVal);
+        setImplAddress(result.implAddress || null);
+        setVerifyExplorer(result.explorerUrl || (result.verified ? `${explorerBase}${deployment.address}#code` : null));
+        // If not yet verified, poll the status endpoint until verified
+        if (statusVal !== 'verified' && statusVal !== 'already_verified') {
+          let attempts = 0;
+          const maxAttempts = 20;
+          const intervalMs = 8000;
+          const poll = async () => {
+            try {
+              attempts += 1;
+              const s = await checkVerificationStatus(deployment.address);
+              if (s?.verified) {
+                setVerifyStatus('verified');
+                setVerifyExplorer(`${explorerBase}${deployment.address}#code`);
+                return;
+              }
+              if (attempts < maxAttempts) {
+                setTimeout(poll, intervalMs);
+              } else {
+                setVerifyStatus('failed');
+              }
+            } catch (e) {
+              console.warn('[verify] poll error', e);
+              if (attempts < maxAttempts) setTimeout(poll, intervalMs);
+              else setVerifyStatus('failed');
+            }
+          };
+          setTimeout(poll, intervalMs);
+        }
+      } catch (err) {
+        console.warn('[verify] Background verification failed:', err.message);
+        setVerifyStatus('failed');
+      }
+    };
+
+    runVerification();
+  }, [deployment?.address]);
 
   if (globalError) {
     return (
@@ -83,6 +124,47 @@ const DeploymentResult = () => {
   }
 
   if (!deployment) return null;
+
+  // Verification badge component
+  const VerificationBadge = () => {
+    if (verifyStatus === 'verifying') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-yellow-400 animate-pulse">
+          <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+          </svg>
+          Verifying contract...
+        </span>
+      );
+    }
+
+    if (verifyStatus === 'verified' || verifyStatus === 'already_verified') {
+      return (
+        <a
+          href={verifyExplorer}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-green-400 hover:text-green-300"
+        >
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          Contract Verified
+        </a>
+      );
+    }
+
+    if (verifyStatus === 'failed') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+          Verification pending — check BscScan shortly
+        </span>
+      );
+    }
+
+    return null;
+  };
 
   const InfoRow = ({ label, value, copyable = false }) => (
     <div className="flex items-center justify-between py-3 border-b border-gray-800 last:border-0">
@@ -201,7 +283,7 @@ const DeploymentResult = () => {
                   </div>
 
                   <div className="flex items-center justify-end gap-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white" title="This contract is verified on BscScan">Verified</span>
+                    <VerificationBadge />
                     <button
                       className="text-cyan-300 underline text-sm hover:text-cyan-200 focus:outline-none"
                       onClick={() => window.open(`${explorerBase}${deployment.address}#code`, '_blank')}

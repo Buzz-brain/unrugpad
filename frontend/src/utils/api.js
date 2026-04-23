@@ -73,4 +73,45 @@ export const interactWithToken = async (interactionData) => {
   return response.data;
 };
 
+const INTERNAL_KEY = import.meta.env.VITE_INTERNAL_API_KEY || "";
+
+/**
+ * Called right after deployment on the Result page.
+ * Fires in background and the backend handles everything — no sourceCode needed from frontend.
+ */
+export const triggerVerification = async (proxyAddress, initCalldata = undefined) => {
+  const postWithRetries = async (url, body, attempts = 3, delayMs = 1000) => {
+    let lastErr;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const resp = await api.post(url, body, { headers: { "x-internal-key": INTERNAL_KEY } });
+        return resp;
+      } catch (err) {
+        lastErr = err;
+        const backoff = delayMs * Math.pow(2, i);
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+    throw lastErr;
+  };
+
+  const body = initCalldata ? { proxyAddress, initCalldata } : { proxyAddress };
+  const resp = await postWithRetries("/api/verify-proxy", body, 3, 1000);
+  return resp; // { status, data }
+  // Returns: { status: "verified" | "already_verified", implAddress, explorerUrl }
+};
+
+/**
+ * Check if a contract address is verified on BscScan.
+ * Use this to show/hide the verified badge on token cards.
+ */
+export const checkVerificationStatus = async (address) => {
+  const response = await api.get(
+    `/api/verify-status/${address}`,
+    { headers: { "x-internal-key": INTERNAL_KEY } }
+  );
+  return response.data;
+  // Returns: { address, verified: bool, explorerUrl: string | null }
+};
+
 export default api;

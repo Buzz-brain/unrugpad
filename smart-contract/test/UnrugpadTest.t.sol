@@ -1,581 +1,656 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-import {UnrugpadToken} from "../src/UnrugpadToken.sol";
-import {ERC1967Proxy} from "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
-// Mock Uniswap V2 contracts for testing
-contract MockUniswapV2Factory {
-    mapping(address => mapping(address => address)) public getPair;
-    
-    function createPair(address tokenA, address tokenB) external returns (address pair) {
-        pair = address(uint160(uint256(keccak256(abi.encodePacked(tokenA, tokenB, block.timestamp)))));
-        getPair[tokenA][tokenB] = pair;
-        getPair[tokenB][tokenA] = pair;
-    }
-}
-
-contract MockUniswapV2Router {
-    address public immutable factory;
-    address public immutable WETH;
-    
-    constructor(address _factory, address _weth) {
-        factory = _factory;
-        WETH = _weth;
-    }
-    
-    function addLiquidityETH(
-        address token,
-        uint amountTokenDesired,
-        uint,
-        uint,
-        address,
-        uint
-    ) external payable returns (uint, uint, uint) {
-        return (amountTokenDesired, msg.value, 0);
-    }
-    
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
-        uint amountIn,
-        uint,
-        address[] calldata,
-        address to,
-        uint
-    ) external {
-        // Mock swap - send proportional ETH
-        uint ethToSend = amountIn / 1000; // Mock rate
-        if (address(this).balance >= ethToSend) {
-            payable(to).transfer(ethToSend);
-        }
-    }
-    
-    receive() external payable {}
-}
+import "forge-std/Test.sol";
+import "../contracts/UnrugpadToken.sol";
 
 contract UnrugpadTokenTest is Test {
-    UnrugpadToken public token;
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STATE VARIABLES
+    // ═══════════════════════════════════════════════════════════════════════════
+
     UnrugpadToken public implementation;
-    ERC1967Proxy public proxy;
-    
-    MockUniswapV2Factory public factory;
-    MockUniswapV2Router public router;
-    address public weth;
-    
-    address public owner;
+    UnrugpadTokenFactory public factory;
+
+    // Sepolia Uniswap V2 Router and addresses
+    address public SEPOLIA_ROUTER;
+    address public constant SEPOLIA_PLATFORM_WALLET = address(0xD5f2aE5AD4001a402C10Aa313acDdfEC1277Ab18); // replace with your actual platform wallet
+
+    // Test actors
+    address public platformOwner;
+    address public tokenDeployer;
+    address public buyer;
+    address public seller;
     address public marketingWallet;
     address public devWallet;
-    address public platformWallet;
-    address public user1;
-    address public user2;
-    address public user3;
-    
-    uint256 constant TOTAL_SUPPLY = 1_000_000 * 10**18; // 1M tokens
-    uint256 constant DENOMINATOR = 10000;
-    
-    event FeesUpdated(string feeType, uint256 marketing, uint256 dev, uint256 lp);
-    event WalletUpdated(string walletType, address indexed newWallet);
-    event FeeExemptUpdated(address indexed account, bool exempt);
-    event PlatformFeeCollected(uint256 amount);
-    
+    address public taxWallet;
+    address public newTaxManager;
+
+    // Deployed token reference
+    UnrugpadToken public token;
+    address public tokenAddress;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SETUP
+    // ═══════════════════════════════════════════════════════════════════════════
+
     function setUp() public {
-        // Setup addresses
-        owner = address(this);
-        marketingWallet = makeAddr("marketing");
-        devWallet = makeAddr("dev");
-        platformWallet = makeAddr("platform");
-        user1 = makeAddr("user1");
-        user2 = makeAddr("user2");
-        user3 = makeAddr("user3");
-        
-        // Deploy mock Uniswap contracts
-        weth = makeAddr("weth");
-        factory = new MockUniswapV2Factory();
-        router = new MockUniswapV2Router(address(factory), weth);
-        
-        // Fund router with ETH for swaps
-        vm.deal(address(router), 100 ether);
-        
-        // Deploy implementation
+         MockUniswapRouter mockRouter = new MockUniswapRouter();
+SEPOLIA_ROUTER = address(mockRouter);
+
+        // Set up test actors
+        platformOwner  = makeAddr("platformOwner");
+        tokenDeployer  = makeAddr("tokenDeployer");
+        buyer          = makeAddr("buyer");
+        seller         = makeAddr("seller");
+        marketingWallet = makeAddr("marketingWallet");
+        devWallet      = makeAddr("devWallet");
+        taxWallet      = makeAddr("taxWallet");
+        newTaxManager  = makeAddr("newTaxManager");
+
+        // Give everyone some ETH to pay gas
+        vm.deal(platformOwner, 100 ether);
+        vm.deal(tokenDeployer, 100 ether);
+        vm.deal(buyer, 100 ether);
+        vm.deal(seller, 100 ether);
+
+        // Deploy implementation and factory as platformOwner
+        vm.startPrank(platformOwner);
+
         implementation = new UnrugpadToken();
-        
-        // Prepare initialization data
+
+        factory = new UnrugpadTokenFactory(
+            address(implementation),
+            platformOwner, // platform wallet receives 0.3%
+            SEPOLIA_ROUTER
+        );
+
+        vm.stopPrank();
+
+        // Deploy a test token as tokenDeployer
+        _deployTestToken();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HELPER — deploys a standard test token
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function _deployTestToken() internal {
         UnrugpadToken.Fees memory buyFees = UnrugpadToken.Fees({
             marketing: 200, // 2%
             dev: 100,       // 1%
             lp: 100         // 1%
         });
-        
+
         UnrugpadToken.Fees memory sellFees = UnrugpadToken.Fees({
-            marketing: 300, // 3%
-            dev: 200,       // 2%
+            marketing: 200, // 2%
+            dev: 100,       // 1%
             lp: 100         // 1%
         });
-        
-        bytes memory initData = abi.encodeWithSelector(
-            UnrugpadToken.initialize.selector,
-            "Unrugpad Token",
-            "UNRUG",
-            TOTAL_SUPPLY,
-            owner,
-            marketingWallet,
-            devWallet,
-            platformWallet,
-            buyFees,
-            sellFees,
-            0, // additional buy fee
-            0, // additional sell fee
-            address(router)
-        );
-        
-        // Deploy proxy
-        proxy = new ERC1967Proxy(address(implementation), initData);
-        token = UnrugpadToken(payable(address(proxy)));
-        
-        // Give users some tokens for testing
-        vm.prank(owner);
-        token.transfer(user1, 10000 * 10**18);
+
+        UnrugpadToken.TokenConfig memory config = UnrugpadToken.TokenConfig({
+            name: "Test Token",
+            symbol: "TST",
+            totalSupply: 1_000_000 * 10**18,
+            owner: tokenDeployer,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            buyFees: buyFees,
+            sellFees: sellFees,
+            buyFee: 500,   // 5% custom buy tax
+            sellFee: 500,  // 5% custom sell tax
+            taxWallet: taxWallet
+        });
+
+        vm.prank(tokenDeployer);
+        tokenAddress = factory.createToken(config, "test-metadata");
+        token = UnrugpadToken(payable(tokenAddress));
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            INITIALIZATION TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testInitialization() public view {
-        assertEq(token.name(), "Unrugpad Token");
-        assertEq(token.symbol(), "UNRUG");
-        assertEq(token.totalSupply(), TOTAL_SUPPLY);
-        assertEq(token.owner(), owner);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 1. FACTORY TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_FactoryDeployedCorrectly() public {
+        assertEq(factory.platformWallet(), platformOwner);
+        assertEq(factory.tokenImplementation(), address(implementation));
+        assertEq(factory.defaultRouter(), SEPOLIA_ROUTER);
+        assertFalse(factory.deploymentsPaused());
+    }
+
+    function test_FactoryTracksDeployedTokens() public {
+        assertEq(factory.getTotalTokensCreated(), 1);
+        assertEq(factory.getTokenAtIndex(0), tokenAddress);
+        assertTrue(factory.isTokenFromFactory(tokenAddress));
+    }
+
+    function test_FactoryTracksUserTokens() public {
+        address[] memory tokens = factory.getUserTokens(tokenDeployer);
+        assertEq(tokens.length, 1);
+        assertEq(tokens[0], tokenAddress);
+    }
+
+    function test_FactoryDeploymentIsFree() public {
+        // Deployment should succeed with zero BNB sent
+        UnrugpadToken.TokenConfig memory config = UnrugpadToken.TokenConfig({
+            name: "Free Token",
+            symbol: "FREE",
+            totalSupply: 1_000_000 * 10**18,
+            owner: tokenDeployer,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            buyFees: UnrugpadToken.Fees(100, 100, 100),
+            sellFees: UnrugpadToken.Fees(100, 100, 100),
+            buyFee: 100,
+            sellFee: 100,
+            taxWallet: taxWallet
+        });
+
+        vm.prank(tokenDeployer);
+        address newToken = factory.createToken(config, "");
+        assertTrue(newToken != address(0));
+    }
+
+    function test_FactoryRevertsMissingTaxWallet() public {
+        UnrugpadToken.TokenConfig memory config = UnrugpadToken.TokenConfig({
+            name: "Bad Token",
+            symbol: "BAD",
+            totalSupply: 1_000_000 * 10**18,
+            owner: tokenDeployer,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            buyFees: UnrugpadToken.Fees(100, 100, 100),
+            sellFees: UnrugpadToken.Fees(100, 100, 100),
+            buyFee: 100,
+            sellFee: 100,
+            taxWallet: address(0) // missing tax wallet
+        });
+
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Tax wallet cannot be zero");
+        factory.createToken(config, "");
+    }
+
+    function test_FactoryRevertsFeesExceed30Percent() public {
+        UnrugpadToken.TokenConfig memory config = UnrugpadToken.TokenConfig({
+            name: "High Fee Token",
+            symbol: "HFT",
+            totalSupply: 1_000_000 * 10**18,
+            owner: tokenDeployer,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            buyFees: UnrugpadToken.Fees(1500, 1500, 100),
+            sellFees: UnrugpadToken.Fees(100, 100, 100),
+            buyFee: 100,
+            sellFee: 100,
+            taxWallet: taxWallet
+        });
+
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Total buy fees exceed 30%");
+        factory.createToken(config, "");
+    }
+
+    function test_FactoryPauseAndUnpause() public {
+        vm.prank(platformOwner);
+        factory.setDeploymentsPaused(true);
+
+        UnrugpadToken.TokenConfig memory config = UnrugpadToken.TokenConfig({
+            name: "Paused Token",
+            symbol: "PAU",
+            totalSupply: 1_000_000 * 10**18,
+            owner: tokenDeployer,
+            marketingWallet: marketingWallet,
+            devWallet: devWallet,
+            buyFees: UnrugpadToken.Fees(100, 100, 100),
+            sellFees: UnrugpadToken.Fees(100, 100, 100),
+            buyFee: 100,
+            sellFee: 100,
+            taxWallet: taxWallet
+        });
+
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Deployments are paused");
+        factory.createToken(config, "");
+
+        // Unpause and try again
+        vm.prank(platformOwner);
+        factory.setDeploymentsPaused(false);
+
+        vm.prank(tokenDeployer);
+        address newToken = factory.createToken(config, "");
+        assertTrue(newToken != address(0));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 2. TOKEN INITIALIZATION TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_TokenInitializedCorrectly() public {
+        assertEq(token.name(), "Test Token");
+        assertEq(token.symbol(), "TST");
+        assertEq(token.totalSupply(), 1_000_000 * 10**18);
+        assertEq(token.owner(), tokenDeployer);
         assertEq(token.marketingWallet(), marketingWallet);
         assertEq(token.devWallet(), devWallet);
-        assertEq(token.platformWallet(), platformWallet);
-        
-        (uint256 buyMarketing, uint256 buyDev, uint256 buyLp) = token.buyFees();
-        assertEq(buyMarketing, 200);
-        assertEq(buyDev, 100);
-        assertEq(buyLp, 100);
-        
-        (uint256 sellMarketing, uint256 sellDev, uint256 sellLp) = token.sellFees();
-        assertEq(sellMarketing, 300);
-        assertEq(sellDev, 200);
-        assertEq(sellLp, 100);
-        
+        assertEq(token.taxWallet(), taxWallet); // FIX 1
+        assertEq(token.platformWallet(), platformOwner);
+        assertEq(token.buyFee(), 500);
+        assertEq(token.sellFee(), 500);
+    }
+
+    function test_TokenDeployerReceivesFullSupply() public {
+        assertEq(token.balanceOf(tokenDeployer), 1_000_000 * 10**18);
+    }
+
+    function test_PlatformFeeIsCorrect() public {
         assertEq(token.PLATFORM_FEE(), 30); // 0.3%
     }
-    
-    function testCannotInitializeTwice() public {
-        UnrugpadToken.Fees memory fees = UnrugpadToken.Fees(0, 0, 0);
-        
+
+    function test_TaxManagerSetToDeployerAtLaunch() public {
+        assertEq(token.taxManager(), tokenDeployer); // FIX 3
+    }
+
+    function test_OwnershipNotRenouncedAtLaunch() public {
+        assertFalse(token.ownershipRenounced()); // FIX 3
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 3. TAX WALLET TESTS (FIX 1)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_TaxWalletSetCorrectly() public {
+        assertEq(token.taxWallet(), taxWallet);
+    }
+
+    function test_TaxWalletIsFeeExempt() public {
+        assertTrue(token.isExcludedFromFees(taxWallet));
+    }
+
+    function test_OwnerCanUpdateTaxWallet() public {
+        address newTaxWallet = makeAddr("newTaxWallet");
+
+        vm.prank(tokenDeployer);
+        token.setTaxWallet(newTaxWallet);
+
+        assertEq(token.taxWallet(), newTaxWallet);
+    }
+
+    function test_NonOwnerCannotUpdateTaxWallet() public {
+        address newTaxWallet = makeAddr("newTaxWallet");
+
+        vm.prank(buyer);
         vm.expectRevert();
-        token.initialize(
-            "Test",
-            "TST",
-            1000,
-            owner,
-            marketingWallet,
-            devWallet,
-            platformWallet,
-            fees,
-            fees,
-            0,
-            0,
-            address(router)
-        );
+        token.setTaxWallet(newTaxWallet);
     }
-    
-    function testInitializationWithZeroAddressesFails() public {
-        implementation = new UnrugpadToken();
-        UnrugpadToken.Fees memory fees = UnrugpadToken.Fees(100, 100, 100);
-        
-        // Test zero owner
-        bytes memory initData = abi.encodeWithSelector(
-            UnrugpadToken.initialize.selector,
-            "Test", "TST", 1000, address(0), marketingWallet, devWallet, platformWallet,
-            fees, fees, 0, 0, address(router)
-        );
-        
-        vm.expectRevert("Owner cannot be zero");
-        new ERC1967Proxy(address(implementation), initData);
+
+    function test_TaxWalletCannotBeZeroAddress() public {
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Tax wallet cannot be zero");
+        token.setTaxWallet(address(0));
     }
-    
-    function testInitializationWithExcessiveFeesFails() public {
-        implementation = new UnrugpadToken();
-        
-        // Test excessive buy fees (>30% total)
-        UnrugpadToken.Fees memory excessiveFees = UnrugpadToken.Fees(1500, 1500, 1500);
-        UnrugpadToken.Fees memory normalFees = UnrugpadToken.Fees(100, 100, 100);
-        
-        bytes memory initData = abi.encodeWithSelector(
-            UnrugpadToken.initialize.selector,
-            "Test", "TST", 1000, owner, marketingWallet, devWallet, platformWallet,
-            excessiveFees, normalFees, 0, 0, address(router)
-        );
-        
-        vm.expectRevert("Total buy fees exceed 30%");
-        new ERC1967Proxy(address(implementation), initData);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 4. TAX MANAGER TESTS (FIX 3)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_SetTaxManager() public {
+        vm.prank(tokenDeployer);
+        token.setTaxManager(newTaxManager);
+        assertEq(token.taxManager(), newTaxManager);
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            FEE CONFIGURATION TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testSetBuyFees() public {
-        vm.expectEmit(true, true, true, true);
-        emit FeesUpdated("buy", 250, 150, 50);
-        
-        token.setBuyFees(250, 150, 50);
-        
-        (uint256 marketing, uint256 dev, uint256 lp) = token.buyFees();
-        assertEq(marketing, 250);
-        assertEq(dev, 150);
-        assertEq(lp, 50);
+
+    function test_NonOwnerCannotSetTaxManager() public {
+        vm.prank(buyer);
+        vm.expectRevert();
+        token.setTaxManager(newTaxManager);
     }
-    
-    function testSetSellFees() public {
-        vm.expectEmit(true, true, true, true);
-        emit FeesUpdated("sell", 400, 200, 100);
-        
-        token.setSellFees(400, 200, 100);
-        
-        (uint256 marketing, uint256 dev, uint256 lp) = token.sellFees();
-        assertEq(marketing, 400);
+
+    function test_TaxManagerCannotBeZero() public {
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Tax manager cannot be zero");
+        token.setTaxManager(address(0));
+    }
+
+    function test_TransferTaxManager() public {
+        vm.prank(tokenDeployer);
+        token.setTaxManager(newTaxManager);
+
+        vm.prank(newTaxManager);
+        token.transferTaxManager(buyer);
+
+        assertEq(token.taxManager(), buyer);
+    }
+
+    function test_NonTaxManagerCannotTransferRole() public {
+        vm.prank(buyer);
+        vm.expectRevert("Not tax manager");
+        token.transferTaxManager(seller);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 5. RENOUNCE WITH TAX CONTROL TESTS (FIX 3)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_RenounceOwnershipWithTaxControl() public {
+        uint256 buyFeeBefore = token.buyFee();
+        uint256 sellFeeBefore = token.sellFee();
+
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        // Ownership should be zero address
+        assertEq(token.owner(), address(0));
+
+        // Renounced flag set
+        assertTrue(token.ownershipRenounced());
+
+        // Ceilings locked in at renounce values
+        assertEq(token.buyFeeCeiling(), buyFeeBefore);
+        assertEq(token.sellFeeCeiling(), sellFeeBefore);
+    }
+
+    function test_NonOwnerCannotRenounce() public {
+        vm.prank(buyer);
+        vm.expectRevert();
+        token.renounceOwnershipWithTaxControl();
+    }
+
+    function test_OwnerFunctionsLockedAfterRenounce() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        // Owner functions should now revert
+        vm.prank(tokenDeployer);
+        vm.expectRevert();
+        token.setMarketingWallet(makeAddr("newMarketing"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 6. REDUCE CUSTOM TAX TESTS (FIX 3)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_CanReduceTaxAfterRenounce() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        vm.prank(tokenDeployer); // tokenDeployer is still taxManager
+        token.reduceCustomTax(300, 300); // reduce from 5% to 3%
+
+        assertEq(token.buyFee(), 300);
+        assertEq(token.sellFee(), 300);
+    }
+
+    function test_CannotReduceTaxBeforeRenounce() public {
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Ownership not yet renounced");
+        token.reduceCustomTax(300, 300);
+    }
+
+    function test_CannotIncreaseTaxAfterRenounce() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        // Try to increase above ceiling (500)
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Cannot exceed original buy fee");
+        token.reduceCustomTax(600, 300);
+    }
+
+    function test_CannotSetTaxAboveCeiling() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Cannot exceed original sell fee");
+        token.reduceCustomTax(300, 600);
+    }
+
+    function test_CanReduceTaxToZero() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        vm.prank(tokenDeployer);
+        token.reduceCustomTax(0, 0);
+
+        assertEq(token.buyFee(), 0);
+        assertEq(token.sellFee(), 0);
+    }
+
+    function test_NonTaxManagerCannotReduceTax() public {
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        vm.prank(buyer);
+        vm.expectRevert("Not tax manager");
+        token.reduceCustomTax(300, 300);
+    }
+
+    function test_CanOnlyReduceNotIncrease() public {
+        // First reduce to 3%
+        vm.prank(tokenDeployer);
+        token.renounceOwnershipWithTaxControl();
+
+        vm.prank(tokenDeployer);
+        token.reduceCustomTax(300, 300);
+
+        // Now try to go back up to 4% — should fail
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Can only reduce buy fee");
+        token.reduceCustomTax(400, 300);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 7. FEE CONFIGURATION TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_TotalBuyFeeIncludesPlatformFee() public {
+        // marketing(2%) + dev(1%) + lp(1%) + buyFee(5%) + platform(0.3%) = 9.3%
+        uint256 totalBuy = token.getTotalBuyFee();
+        assertEq(totalBuy, 200 + 100 + 100 + 500 + 30);
+    }
+
+    function test_TotalSellFeeIncludesPlatformFee() public {
+        uint256 totalSell = token.getTotalSellFee();
+        assertEq(totalSell, 200 + 100 + 100 + 500 + 30);
+    }
+
+    function test_OwnerCanUpdateBuyFees() public {
+        vm.prank(tokenDeployer);
+        token.setBuyFees(300, 200, 100);
+
+        (uint256 marketing, uint256 dev, uint256 lp) = (
+            token.getBuyFees().marketing,
+            token.getBuyFees().dev,
+            token.getBuyFees().lp
+        ) ;
+        assertEq(marketing, 300);
         assertEq(dev, 200);
         assertEq(lp, 100);
     }
-    
-    function testSetBuyFeesExceedsMaxFails() public {
+
+    function test_OwnerCanUpdateSellFees() public {
+        vm.prank(tokenDeployer);
+        token.setSellFees(300, 200, 100);
+
+        assertEq(token.getSellFees().marketing, 300);
+        assertEq(token.getSellFees().dev, 200);
+        assertEq(token.getSellFees().lp, 100);
+    }
+
+    function test_FeesCannotExceed30Percent() public {
+        vm.prank(tokenDeployer);
         vm.expectRevert("Total buy fees exceed 30%");
-        token.setBuyFees(1500, 1500, 1500);
+        token.setBuyFees(1500, 1500, 500); // exceeds 30%
     }
-    
-    function testSetBuyFee() public {
-        token.setBuyFee(500); // 5%
-        assertEq(token.buyFee(), 500);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 8. WALLET TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_OwnerCanUpdateMarketingWallet() public {
+        address newMarketing = makeAddr("newMarketing");
+        vm.prank(tokenDeployer);
+        token.setMarketingWallet(newMarketing);
+        assertEq(token.marketingWallet(), newMarketing);
     }
-    
-    function testSetSellFee() public {
-        token.setSellFee(600); // 6%
-        assertEq(token.sellFee(), 600);
+
+    function test_OwnerCanUpdateDevWallet() public {
+        address newDev = makeAddr("newDev");
+        vm.prank(tokenDeployer);
+        token.setDevWallet(newDev);
+        assertEq(token.devWallet(), newDev);
     }
-    
-    function testOnlyOwnerCanSetFees() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        token.setBuyFees(100, 100, 100);
-        
-        vm.prank(user1);
-        vm.expectRevert();
-        token.setSellFees(100, 100, 100);
-    }
-    
-    /*//////////////////////////////////////////////////////////////
-                            WALLET CONFIGURATION TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testSetMarketingWallet() public {
-        address newWallet = makeAddr("newMarketing");
-        
-        vm.expectEmit(true, true, true, true);
-        emit WalletUpdated("marketing", newWallet);
-        
-        token.setMarketingWallet(newWallet);
-        assertEq(token.marketingWallet(), newWallet);
-    }
-    
-    function testSetDevWallet() public {
-        address newWallet = makeAddr("newDev");
-        token.setDevWallet(newWallet);
-        assertEq(token.devWallet(), newWallet);
-    }
-    
-    function testSetPlatformWallet() public {
-        address newWallet = makeAddr("newPlatform");
-        token.setPlatformWallet(newWallet);
-        assertEq(token.platformWallet(), newWallet);
-    }
-    
-    function testSetWalletToZeroAddressFails() public {
+
+    function test_WalletCannotBeZeroAddress() public {
+        vm.prank(tokenDeployer);
         vm.expectRevert("Marketing wallet cannot be zero");
         token.setMarketingWallet(address(0));
-        
-        vm.expectRevert("Dev wallet cannot be zero");
-        token.setDevWallet(address(0));
-        
-        vm.expectRevert("Platform wallet cannot be zero");
-        token.setPlatformWallet(address(0));
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            FEE EXEMPTION TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testSetFeeExempt() public {
-        assertEq(token.isFeeExempt(user2), false);
-        
-        vm.expectEmit(true, true, true, true);
-        emit FeeExemptUpdated(user2, true);
-        
-        token.setFeeExempt(user2, true);
-        assertEq(token.isFeeExempt(user2), true);
-        
-        token.setFeeExempt(user2, false);
-        assertEq(token.isFeeExempt(user2), false);
-    }
-    
-    function testDefaultFeeExemptions() public view {
-        assertTrue(token.isFeeExempt(owner));
-        assertTrue(token.isFeeExempt(address(token)));
-        assertTrue(token.isFeeExempt(marketingWallet));
-        assertTrue(token.isFeeExempt(devWallet));
-        assertTrue(token.isFeeExempt(platformWallet));
-    }
-    
-    /*//////////////////////////////////////////////////////////////
-                            TRANSFER TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testBasicTransfer() public {
-        uint256 amount = 1000 * 10**18;
-        uint256 ownerBalanceBefore = token.balanceOf(owner);
-        
-        token.transfer(user2, amount);
-        
-        assertEq(token.balanceOf(user2), amount);
-        assertEq(token.balanceOf(owner), ownerBalanceBefore - amount);
-    }
-    
-    function testTransferBetweenNonPairsNoFees() public {
-        uint256 amount = 1000 * 10**18;
-        
-        vm.prank(user1);
-        token.transfer(user2, amount);
-        
-        assertEq(token.balanceOf(user2), amount);
-        assertEq(token.balanceOf(user1), 9000 * 10**18);
-    }
-    
-    function testFeeExemptTransferNoFees() public {
-        uint256 amount = 1000 * 10**18;
-        uint256 initialBalance = token.balanceOf(owner);
-        
-        token.transfer(marketingWallet, amount);
-        
-        // No fees should be taken
-        assertEq(token.balanceOf(marketingWallet), amount);
-        assertEq(token.balanceOf(owner), initialBalance - amount);
-    }
-    
-    /*//////////////////////////////////////////////////////////////
-                            LIMITS TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testMaxTransactionAmount() public view {
-        uint256 maxTx = token.maxTransactionAmount();
-        uint256 expectedMaxTx = (TOTAL_SUPPLY * 50) / DENOMINATOR; // 0.5%
-        assertEq(maxTx, expectedMaxTx);
-    }
-    
-    function testMaxWalletAmount() public view {
-        uint256 maxWallet = token.maxWalletAmount();
-        uint256 expectedMaxWallet = (TOTAL_SUPPLY * 50) / DENOMINATOR; // 0.5%
-        assertEq(maxWallet, expectedMaxWallet);
-    }
-    
-    function testSetLimits() public {
-        uint256 newMaxTx = TOTAL_SUPPLY / 100; // 1%
-        uint256 newMaxWallet = TOTAL_SUPPLY / 50; // 2%
-        
-        token.setLimits(newMaxTx, newMaxWallet);
-        
-        assertEq(token.maxTransactionAmount(), newMaxTx);
-        assertEq(token.maxWalletAmount(), newMaxWallet);
-    }
-    
-    function testSetLimitsTooLowFails() public {
-        uint256 tooLow = TOTAL_SUPPLY / 2000; // 0.05%
-        
-        vm.expectRevert("Max tx too low");
-        token.setLimits(tooLow, TOTAL_SUPPLY / 100);
-        
-        vm.expectRevert("Max wallet too low");
-        token.setLimits(TOTAL_SUPPLY / 100, tooLow);
-    }
-    
-    function testRemoveLimits() public {
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 9. LIMITS TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_LimitsSetCorrectlyAtLaunch() public {
+        uint256 supply = token.totalSupply();
+        assertEq(token.maxTransactionAmount(), (supply * 50) / 10000); // 0.5%
+        assertEq(token.maxWalletAmount(), (supply * 50) / 10000);      // 0.5%
         assertTrue(token.limitsInEffect());
-        
+    }
+
+    function test_OwnerCanRemoveLimits() public {
+        vm.prank(tokenDeployer);
         token.removeLimits();
-        
         assertFalse(token.limitsInEffect());
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            PAIR MANAGEMENT TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testSetPair() public {
-        address newPair = makeAddr("newPair");
-        
-        token.setPair(newPair, true);
-        assertTrue(token.isPair(newPair));
-        
-        token.setPair(newPair, false);
-        assertFalse(token.isPair(newPair));
+
+    function test_OwnerCanUpdateLimits() public {
+        uint256 supply = token.totalSupply();
+        uint256 newMax = (supply * 100) / 10000; // 1%
+
+        vm.prank(tokenDeployer);
+        token.updateLimits(newMax, newMax);
+
+        assertEq(token.maxTransactionAmount(), newMax);
+        assertEq(token.maxWalletAmount(), newMax);
     }
-    
-    function testCannotRemoveMainPair() public {
-        address mainPair = token.uniswapV2Pair();
-        
-        vm.expectRevert("Cannot remove main pair");
-        token.setPair(mainPair, false);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 10. TRADING PAUSE TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_OwnerCanPauseTrading() public {
+        vm.prank(tokenDeployer);
+        token.setTradingPaused(true);
+        assertTrue(token.tradingPaused());
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTION TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testGetTotalBuyFee() public view {
-        uint256 totalBuyFee = token.getTotalBuyFee();
-        // 200 (marketing) + 100 (dev) + 100 (lp) + 0 (additional) + 30 (platform) = 430
-        assertEq(totalBuyFee, 430);
+
+    function test_OwnerCanUnpauseTrading() public {
+        vm.prank(tokenDeployer);
+        token.setTradingPaused(true);
+
+        vm.prank(tokenDeployer);
+        token.setTradingPaused(false);
+        assertFalse(token.tradingPaused());
     }
-    
-    function testGetTotalSellFee() public view {
-        uint256 totalSellFee = token.getTotalSellFee();
-        // 300 (marketing) + 200 (dev) + 100 (lp) + 0 (additional) + 30 (platform) = 630
-        assertEq(totalSellFee, 630);
+
+    function test_TransferFailsWhenPaused() public {
+        vm.prank(tokenDeployer);
+        token.setTradingPaused(true);
+
+        vm.prank(tokenDeployer);
+        vm.expectRevert("Trading is paused");
+        token.transfer(buyer, 1000 * 10**18);
     }
-    
-    function testGetPlatformFee() public view {
-        assertEq(token.getPlatformFee(), 30);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 11. FACTORY ADMIN TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_PlatformOwnerCanUpdatePlatformWallet() public {
+        address newWallet = makeAddr("newPlatformWallet");
+        vm.prank(platformOwner);
+        factory.setPlatformWallet(newWallet);
+        assertEq(factory.platformWallet(), newWallet);
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            SWAP THRESHOLD TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testSetSwapTokensAtAmount() public {
-        uint256 newAmount = TOTAL_SUPPLY / 1000; // 0.1%
-        
-        token.setSwapTokensAtAmount(newAmount);
-        assertEq(token.swapTokensAtAmount(), newAmount);
-    }
-    
-    function testSetSwapTokensAtAmountTooLowFails() public {
-        uint256 tooLow = TOTAL_SUPPLY / 200000; // Too low
-        
-        vm.expectRevert("Amount too low");
-        token.setSwapTokensAtAmount(tooLow);
-    }
-    
-    function testSetSwapTokensAtAmountTooHighFails() public {
-        uint256 tooHigh = TOTAL_SUPPLY / 50; // Too high
-        
-        vm.expectRevert("Amount too high");
-        token.setSwapTokensAtAmount(tooHigh);
-    }
-    
-    /*//////////////////////////////////////////////////////////////
-                            UPGRADE TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testOnlyOwnerCanUpgrade() public {
-        UnrugpadToken newImplementation = new UnrugpadToken();
-        
-        vm.prank(user1);
+
+    function test_NonOwnerCannotUpdatePlatformWallet() public {
+        vm.prank(tokenDeployer);
         vm.expectRevert();
-        token.upgradeToAndCall(address(newImplementation), "");
+        factory.setPlatformWallet(makeAddr("hacker"));
     }
-    
-    function testUpgrade() public {
-        UnrugpadToken newImplementation = new UnrugpadToken();
-        
-        // Upgrade
-        token.upgradeToAndCall(address(newImplementation), "");
-        
-        // Verify state is preserved
-        assertEq(token.name(), "Unrugpad Token");
-        assertEq(token.symbol(), "UNRUG");
-        assertEq(token.totalSupply(), TOTAL_SUPPLY);
+
+    function test_PlatformOwnerCanUpdateImplementation() public {
+        UnrugpadToken newImpl = new UnrugpadToken();
+        vm.prank(platformOwner);
+        factory.setImplementation(address(newImpl));
+        assertEq(factory.tokenImplementation(), address(newImpl));
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            RECEIVE ETH TEST
-    //////////////////////////////////////////////////////////////*/
-    
-    function testReceiveETH() public {
-        uint256 amount = 1 ether;
-        
-        (bool success,) = address(token).call{value: amount}("");
-        assertTrue(success);
-        assertEq(address(token).balance, amount);
+
+    function test_PlatformOwnerCanTransferOwnership() public {
+        address newOwner = makeAddr("newOwner");
+        vm.prank(platformOwner);
+        factory.transferOwnership(newOwner);
+        assertEq(factory.owner(), newOwner);
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            EDGE CASES
-    //////////////////////////////////////////////////////////////*/
-    
-    function testTransferZeroAmount() public {
-        uint256 balanceBefore = token.balanceOf(user2);
-        
-        vm.prank(user1);
-        token.transfer(user2, 0);
-        
-        assertEq(token.balanceOf(user2), balanceBefore);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 12. CIRCULATING SUPPLY TEST
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    function test_CirculatingSupply() public {
+        uint256 supply = token.totalSupply();
+        assertEq(token.getCirculatingSupply(), supply);
     }
-    
-    function testMultipleTransfers() public {
-        uint256 amount = 100 * 10**18;
-        
-        vm.startPrank(user1);
-        token.transfer(user2, amount);
-        token.transfer(user3, amount);
-        vm.stopPrank();
-        
-        assertEq(token.balanceOf(user2), amount);
-        assertEq(token.balanceOf(user3), amount);
+}
+
+contract MockUniswapRouter {
+    address public WETH;
+    address public mockFactory;
+    address public mockPair;
+
+    constructor() {
+        WETH = address(new MockWETH());
+        mockFactory = address(new MockUniswapFactory());
+        mockPair = address(0x999);
     }
-    
-    /*//////////////////////////////////////////////////////////////
-                            FUZZ TESTS
-    //////////////////////////////////////////////////////////////*/
-    
-    function testFuzzTransfer(uint256 amount) public {
-        // Bound amount to not exceed user1's balance
-        amount = bound(amount, 0, token.balanceOf(user1));
-        
-        // Also bound to not exceed max wallet amount for user2
-        uint256 maxWallet = token.maxWalletAmount();
-        uint256 user2Balance = token.balanceOf(user2);
-        
-        // If user2 would exceed max wallet, reduce the amount
-        if (user2Balance + amount > maxWallet) {
-            amount = maxWallet > user2Balance ? maxWallet - user2Balance : 0;
-        }
-        
-        uint256 expectedBalance = user2Balance + amount;
-        
-        vm.prank(user1);
-        token.transfer(user2, amount);
-        
-        assertEq(token.balanceOf(user2), expectedBalance);
+
+    function factory() external view returns (address) {
+        return mockFactory;
     }
-    
-    function testFuzzSetBuyFees(uint256 marketing, uint256 dev, uint256 lp) public {
-        marketing = bound(marketing, 0, 1000);
-        dev = bound(dev, 0, 1000);
-        lp = bound(lp, 0, 1000);
-        
-        vm.assume(marketing + dev + lp <= 3000);
-        
-        token.setBuyFees(marketing, dev, lp);
-        
-        (uint256 m, uint256 d, uint256 l) = token.buyFees();
-        assertEq(m, marketing);
-        assertEq(d, dev);
-        assertEq(l, lp);
+
+    function addLiquidityETH(
+        address, uint256, uint256, uint256, address, uint256
+    ) external payable returns (uint256, uint256, uint256) {
+        return (0, 0, 0);
     }
-    
-    receive() external payable {}
+
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint256, uint256, address[] calldata, address, uint256
+    ) external {}
+}
+
+contract MockUniswapFactory {
+    address public mockPair;
+
+    constructor() {
+        mockPair = address(new MockUniswapPair());
+    }
+
+    function createPair(address, address) external view returns (address) {
+        return mockPair;
+    }
+
+    function getPair(address, address) external view returns (address) {
+        return mockPair;
+    }
+}
+
+contract MockUniswapPair {
+    // Empty pair — just needs to exist as a contract
+}
+
+contract MockWETH {
+    // Empty WETH — just needs to exist as a contract
 }

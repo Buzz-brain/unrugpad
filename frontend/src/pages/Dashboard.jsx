@@ -15,7 +15,7 @@ import { useWeb3 } from '../contexts/Web3Context';
 import { ethers } from 'ethers';
 import UnrugpadTokenABI from '../abis/UnrugpadToken.json';
 import UnrugpadTokenFactoryABI from '../abis/UnrugpadTokenFactory.json';
-import { interactWithToken } from '../utils/api';
+import { interactWithToken, checkVerificationStatus, triggerVerification } from '../utils/api';
 import Modal from '../components/Modal';
 import AdminPanel from '../components/AdminPanel';
 
@@ -145,8 +145,8 @@ const Dashboard = () => {
       }
       // Convert Proxy result to array for ethers v6 compatibility
       const tokenArray = Array.from(userTokens);
-      // Tokens created by our factory use a verified implementation; mark as verified locally.
-      const tokenObjs = tokenArray.map(addr => ({ address: addr, verifyStatus: 'already_verified', verifyExplorer: null }));
+      // Build token objects without hardcoded verifyStatus
+      const tokenObjs = tokenArray.map(addr => ({ address: addr }));
       setTokens(tokenObjs);
     } catch (err) {
       console.error("[DASHBOARD] Network error:", err);
@@ -163,13 +163,12 @@ const Dashboard = () => {
     fetchTokens();
   }, [account, provider, openWalletModal, chainId]);
 
-  // Fetch live token details from blockchain
+  // Fetch live token details from blockchain and check real verification status
   useEffect(() => {
     const fetchLiveDetails = async () => {
       if (!tokens.length) return;
       setIsFetchingDetails(true);
 
-      // Build a provider or signer fallback so we can query the chain
       let providerOrSigner = signer || provider;
       if (!providerOrSigner && typeof window !== 'undefined' && window.ethereum) {
         try {
@@ -179,22 +178,14 @@ const Dashboard = () => {
           console.warn('[DASHBOARD] Could not create fallback signer from window.ethereum:', err);
         }
       }
-
       if (!providerOrSigner) {
         console.warn('[DASHBOARD] No provider or signer available for fetching token details');
         return;
       }
-
-      console.log('[DASHBOARD] Fetching live details for tokens:', tokens.map(t => t.address));
-
-      // Use API base from env to contact backend rather than the Vite dev server
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-
-      // Fetch live token details from blockchain (do not call BscScan per-token here to avoid rate limits).
+      // Fetch live token details from blockchain
       const details = await Promise.all(tokens.map(async (token) => {
         try {
           const contract = new ethers.Contract(token.address, UnrugpadTokenABI.abi, providerOrSigner);
-          // Fetch all recommended fields in parallel
           const [
             name, symbol, totalSupply, balance, decimals, owner, tradingPaused, buyFee, sellFee, buyFees, sellFees,
             platformFee, getTotalBuyFee, getTotalSellFee, maxTransactionAmount, maxWalletAmount, limitsInEffect,
@@ -242,20 +233,29 @@ const Dashboard = () => {
             contract.isExcludedFromFees ? contract.isExcludedFromFees(account).catch(() => null) : Promise.resolve(null)
           ]);
 
-          // Tokens from our factory are considered verified (implementation is verified).
-          const verifyStatus = token.verifyStatus || 'already_verified';
-          const verifyExplorer = token.verifyExplorer || null;
+          // Check real verification status from backend
+          let verifyStatus = 'unverified';
+          let verifyExplorer = null;
+          try {
+            const verifyResp = await checkVerificationStatus(token.address);
+            console.log(`[DASHBOARD] Verification check for ${token.address}:`, verifyResp);
+            if (verifyResp.verified) {
+              verifyStatus = 'already_verified';
+              verifyExplorer = verifyResp.explorerUrl;
+            }
+          } catch (e) {
+            console.warn(`[DASHBOARD] Verification check failed for ${token.address}:`, e);
+            // If the check fails, leave as unverified
+          }
 
           if (!name || !symbol || !totalSupply) {
             console.warn(`[DASHBOARD] Missing details for token ${token.address}:`, { name, symbol, totalSupply });
             return { ...token, error: 'Could not fetch live details', verifyStatus, verifyExplorer };
           }
 
-          // Normalize values to strings for display
           const norm = (v) => (v && v.toString ? v.toString() : String(v));
           const normStruct = (s) => {
             if (!s) return { marketing: '0', dev: '0', lp: '0' };
-            // ethers may return a struct as an array-like object (0,1,2) or as named keys
             if (Array.isArray(s) || (typeof s === 'object' && s[0] !== undefined)) {
               return {
                 marketing: s[0]?.toString?.() ?? '0',
@@ -322,36 +322,41 @@ const Dashboard = () => {
           return { ...token, error: 'Could not fetch live details', verifyStatus: 'unknown', verifyExplorer: null };
         }
       }));
-
-      console.log('[DASHBOARD] Live token details:', details);
       setLiveTokenDetails(details);
       setIsFetchingDetails(false);
     };
-    // Only run details fetch when we have tokens
     if (tokens.length) fetchLiveDetails();
-    // Set up periodic verification refresh for tokens
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const interval = setInterval(async () => {
-      if (!liveTokenDetails || liveTokenDetails.length === 0) return;
+    
+    // Set up periodic verification status refresh
+    const refreshInterval = setInterval(async () => {
+      if (!liveTokenDetails?.length) return;
       try {
-        const refreshed = await Promise.all(liveTokenDetails.map(async (t) => {
-          try {
-            const resp = await fetch(`${apiBaseUrl}/api/verify-proxy/status?proxyAddress=${t.address}`);
-            if (!resp.ok) return t;
-            const d = await resp.json();
-            return { ...t, verifyStatus: d.status || t.verifyStatus, verifyExplorer: d.explorer || t.verifyExplorer };
-          } catch (e) {
-            return t;
-          }
-        }));
+        console.log('[DASHBOARD] Periodic verification status refresh...');
+        const refreshed = await Promise.all(
+          liveTokenDetails.map(async (t) => {
+            try {
+              const verifyResp = await checkVerificationStatus(t.address);
+              console.log(`[DASHBOARD] Periodic refresh for ${t.address}:`, verifyResp);
+              const newVerifyStatus = verifyResp.verified ? 'already_verified' : 'unverified';
+              return { 
+                ...t, 
+                verifyStatus: newVerifyStatus,
+                verifyExplorer: verifyResp.explorerUrl 
+              };
+            } catch (e) {
+              console.warn(`[DASHBOARD] Periodic refresh failed for ${t.address}:`, e);
+              return t;
+            }
+          })
+        );
         setLiveTokenDetails(refreshed);
       } catch (e) {
-        // ignore periodic errors
+        console.error('[DASHBOARD] Periodic verification refresh error:', e);
       }
-    }, 60000); // every 60s
-
+    }, 60000); // every 60 seconds
+    
     return () => {
-      clearInterval(interval);
+      clearInterval(refreshInterval);
       setIsFetchingDetails(false);
     };
   }, [tokens, signer, provider, account]);
@@ -487,6 +492,21 @@ const Dashboard = () => {
       toast.error(error.response?.data?.message || 'Failed to check balance');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerify = async (address) => {
+    // Optimistically mark as verifying
+    setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: 'verifying' } : t));
+    try {
+      const res = await triggerVerification(address);
+      const newStatus = res.status || 'verified';
+      setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: newStatus, verifyExplorer: res.explorerUrl || t.verifyExplorer } : t));
+      toast.success(`Verification ${newStatus} for ${address}`);
+    } catch (err) {
+      console.error('[DASHBOARD] Manual verify failed', err);
+      setLiveTokenDetails((prev) => prev.map((t) => t.address === address ? { ...t, verifyStatus: 'failed' } : t));
+      toast.error(err.response?.data?.detail || err.message || 'Verification failed');
     }
   };
 
@@ -746,7 +766,7 @@ const Dashboard = () => {
                     >
                       View on BscScan
                     </button>
-                    {token.verifyStatus === 'already_verified' && (
+                    {token.verifyStatus === 'already_verified' ? (
                       <span
                         className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-600 text-white cursor-help ml-2"
                         title="This contract is verified on BscScan"
@@ -755,7 +775,28 @@ const Dashboard = () => {
                       >
                         Verified
                       </span>
-                    )}
+                    ) : token.verifyStatus === 'unverified' ? (
+                      <div className="inline-flex items-center gap-2 ml-2">
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-500 text-white cursor-help"
+                          title="This contract is not verified on BscScan"
+                          tabIndex={0}
+                          style={{ outline: 'none' }}
+                        >
+                          Unverified
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs"
+                          onClick={() => handleVerify(token.address)}
+                          loading={token.verifyStatus === 'verifying'}
+                          disabled={token.verifyStatus === 'verifying'}
+                        >
+                          {token.verifyStatus === 'verifying' ? 'Verifying...' : 'Verify'}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 {/* Verification: badge+link shown next to address (no duplicate row) */}

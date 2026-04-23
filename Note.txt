@@ -248,3 +248,26 @@ Yes, for your platform, this is best practice.
 Since all tokens are proxies pointing to a single, already-verified implementation contract, BscScan will always show them as “verified.” Displaying “Verified” on your frontend immediately after deployment is user-friendly, avoids unnecessary API calls, and scales well.
 
 You only need to use the BscScan API for rare admin/troubleshooting cases—not for every user or dashboard view. This approach is secure, efficient, and industry standard for proxy-based token factories.
+
+
+
+
+Analyzing contract artifacts and ABIs loading...
+Looking for UnrugpadToken artifact at: C:\Users\Buzz brain\Desktop\unrugpad\artifacts\contracts\UnrugpadToken.sol\UnrugpadToken.json 
+Absolute: C:\Users\Buzz brain\Desktop\unrugpad\artifacts\contracts\UnrugpadToken.sol\UnrugpadToken.json
+Loaded UnrugpadToken ABI and bytecode from artifact: C:\Users\Buzz brain\Desktop\unrugpad\artifacts\contracts\UnrugpadToken.sol\UnrugpadToken.json
+Detected local RPC - preparing to deploy mock Uniswap router/factory
+Deploying MockUniswapV2Factory...
+Deploying MockUniswapV2Router...
+Deployed mock factory: 0x809d550fca64d94Bd9F66E60752A544199cfAC3D
+Deployed mock router : 0x4c5859f0F772848b2D91F1D83E2Fe57935348029
+Deploying implementation...
+lib copy not found at C:\Users\Buzz brain\Desktop\unrugpad\Unrugpad\lib\openzeppelin-contracts\contracts\proxy\ERC1967\ERC1967Proxy.sol
+Checking node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\Unrugpad\node_modules\@openzeppelin\contracts\proxy\ERC1967\ERC1967Proxy.sol
+Checking node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\node_modules\@openzeppelin\contracts\proxy\ERC1967\ERC1967Proxy.sol
+Found ERC1967Proxy in node_modules candidate: C:\Users\Buzz brain\Desktop\unrugpad\node_modules\@openzeppelin\contracts\proxy\ERC1967\ERC1967Proxy.sol
+Deploy error source is not defined
+
+## Verification UX
+
+Tokens deployed via the included factory are shown as "verified" in the frontend UX because the factory uses a verified implementation contract (proxy pattern). To avoid hitting explorer API rate limits, the backend verification endpoints are disabled by default — enable them only for admin/debugging by setting `VERIFY_ENDPOINT_ENABLED=true` in the server environment and providing `BSCSCAN_API_KEY` in `smart-contract/.env`.

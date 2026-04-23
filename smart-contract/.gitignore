@@ -7,16 +7,11 @@
 # pnpm deploy output
 /bundle
 
-# Hardhat Build Artifacts
-/artifacts
+# Build output
+/out
 
-# Hardhat compilation (v2) support directory
+# Cache and coverage
 /cache
-
-# Typechain output
-/types
-
-# Hardhat coverage reports
 /coverage
 
 # Environment file (do NOT commit)

@@ -43,6 +43,16 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
     setIsOwner(Boolean(account && token && token.owner && account.toLowerCase() === token.owner.toLowerCase()));
   }, [account, token]);
 
+  // Show toast when user is not owner and panel is open (only if ownership renounced)
+  useEffect(() => {
+    if (modalVisible && !isOwner && account && token && token.ownershipRenounced) {
+      toast.info('View-only: connect as owner to see admin controls', {
+        autoClose: 5000,
+        position: 'top-center'
+      });
+    }
+  }, [modalVisible, isOwner, account, token]);
+
   const [activeAction, setActiveAction] = useState(null); // e.g. 'tradingPaused', 'swap', etc.
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const isGlobalLoading = Boolean(activeAction || confirmSubmitting);
@@ -927,9 +937,7 @@ export default function AdminPanel({ token, onEditSuccess, hideTrigger = false, 
           )}
 
         </div>
-      ) : (
-        <div className="text-xs text-gray-500">View-only: connect as owner to see admin controls</div>
-      )}
+      ) : null}
     </div>
   );
 }

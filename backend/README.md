@@ -53,20 +53,21 @@ The backend exposes a verification endpoint used by the frontend or CI to verify
 
 - Endpoint: `POST /api/verify-proxy`
 - Body: JSON { "proxyAddress": string, "constructorArgs": array, "network": string }
-- What it does: The endpoint resolves the implementation address from the proxy using `eth_getStorageAt` (EIP-1967 slot) and spawns `npx hardhat verify` inside the `smart-contract/` workspace to submit sources to BscScan.
-- Required env (place in `smart-contract/.env`):
+- What it does: The endpoint resolves the implementation address from the proxy using `eth_getStorageAt` (EIP-1967 slot) and submits the implementation contract source to BscScan through the backend verification service.
+- Required env:
   - `BSCSCAN_API_KEY` — BscScan API key for verification
-  - `BSC_RPC_URL` — RPC endpoint used to fetch implementation and talk to the chain
-  - `BSC_PRIVATE_KEY` — optional, used if signing is required
+  - `BSC_RPC_URL` — RPC endpoint used to fetch the implementation contract and query the chain
+  - `SOLC_VERSION` — Solidity compiler version used by the contract source
+  - `INTERNAL_API_KEY` (or `VITE_INTERNAL_API_KEY` in frontend) — internal key used to protect the verification endpoints
 
 - Responses: The backend returns structured JSON including `status`:
   - `ok` — verification submitted successfully (may include `explorer` link)
   - `already_verified` — contract was already verified (includes `explorer` link when available)
-  - `api_key_missing` — Hardhat reported missing API key (check `.env`)
-  - `failed` — verification failed; `output` contains Hardhat CLI logs for inspection
+  - `api_key_missing` — the internal endpoint key is missing or invalid
+  - `failed` — verification failed; `output` contains explorer API logs for inspection
 
 Security: protect this endpoint before exposing it publicly. Consider adding authentication or restricting access to CI IPs.
 
 Re-enabling (admin use)
-- By default the server returns HTTP 410 from `/api/verify-proxy` and `/api/verify-proxy/status`.
-- To re-enable verification endpoints set `VERIFY_ENDPOINT_ENABLED=true` in the server environment (admin/debug only). Ensure `smart-contract/.env` contains `BSCSCAN_API_KEY` and `BSC_RPC_URL` if using verification flows.
+- The verification endpoints are protected by an internal API key and should only be used for admin or debugging purposes.
+- Ensure `BSCSCAN_API_KEY`, `BSC_RPC_URL`, and `SOLC_VERSION` are set in the server environment before using verification.

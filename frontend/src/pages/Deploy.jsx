@@ -10,7 +10,9 @@ import Input from "../components/Input";
 import { useWeb3 } from "../contexts/Web3Context";
 import { useWalletModal } from "../contexts/WalletModalContext";
 import UnrugpadTokenFactoryABI from "../abis/UnrugpadTokenFactory.json";
+import UnrugpadTokenABI from "../abis/UnrugpadToken.json";
 import { ethers } from "ethers";
+import { triggerVerification } from "../utils/api";
 
 const Deploy = () => {
   const navigate = useNavigate();
@@ -98,15 +100,23 @@ const Deploy = () => {
   };
 
   useEffect(() => {
-    // Optionally check for BNB balance, but allow deployment with any amount
+    // Check for minimum BNB balance (0.0003 BNB) before allowing deployment
     if (!isConnected || chainId !== 56) {
       setDeploymentFee(null);
       setInsufficientFunds(false);
       return;
     }
-    setDeploymentFee(0n);
-    // Disable insufficient funds check (allow deploy with any balance)
-    setInsufficientFunds(false);
+
+    const minBalance = 0.0003; // Minimum 0.0003 BNB required
+    const userBalance = parseFloat(balance || "0");
+
+    if (userBalance < minBalance) {
+      setInsufficientFunds(true);
+      setDeploymentFee(null);
+    } else {
+      setInsufficientFunds(false);
+      setDeploymentFee(0n);
+    }
   }, [isConnected, account, balance, chainId]);
 
   // Keep ownerAddress synced to connected wallet
@@ -297,29 +307,73 @@ const Deploy = () => {
       console.log("[DEPLOY-DEBUG] TokenConfig:", config);
       const metadata = "";
       const factory = new ethers.Contract(factoryAddress, UnrugpadTokenFactoryABI.abi, signer);
+      // Read factory platform/router to reproduce the initializer calldata used by the factory
+      let platformWalletAddr = null;
+      let defaultRouterAddr = null;
       try {
-        let deploymentFee = 0n;
-        try {
-          deploymentFee = await factory.deploymentFee();
-        } catch (feeErr) {
-          console.error("[DEPLOY-DEBUG] Error fetching deploymentFee:", feeErr);
-        }
-        console.log("[DEPLOY-DEBUG] Deployment fee:", deploymentFee);
+        platformWalletAddr = await factory.platformWallet();
+      } catch (e) {
+        console.warn("[DEPLOY-DEBUG] could not read factory.platformWallet():", e);
+      }
+      try {
+        defaultRouterAddr = await factory.defaultRouter();
+      } catch (e) {
+        console.warn("[DEPLOY-DEBUG] could not read factory.defaultRouter():", e);
+      }
+
+      // Build the initializer calldata exactly as the proxy will store it
+      let initCalldata = "0x";
+      try {
+        const tokenIface = new ethers.utils.Interface(UnrugpadTokenABI.abi);
+        initCalldata = tokenIface.encodeFunctionData("initialize", [
+          // TokenConfig struct must match order in UnrugpadToken.initialize
+          {
+            name: config.name,
+            symbol: config.symbol,
+            totalSupply: config.totalSupply,
+            owner: config.owner,
+            marketingWallet: config.marketingWallet,
+            devWallet: config.devWallet,
+            buyFees: config.buyFees,
+            sellFees: config.sellFees,
+            buyFee: config.buyFee,
+            sellFee: config.sellFee,
+            taxWallet: config.taxWallet,
+          },
+          platformWalletAddr || ethers.constants.AddressZero,
+          defaultRouterAddr || ethers.constants.AddressZero,
+          metadata,
+        ]);
+
+        console.log("[DEPLOY-DEBUG] initializer calldata (hex):", initCalldata);
+      } catch (e) {
+        console.warn("[DEPLOY-DEBUG] failed to encode initializer calldata:", e);
+      }
+      try {
+        // No deployment fee, only gas is required
         console.log("[DEPLOY-DEBUG] About to call factory.createToken (MetaMask should open now)");
-        const tx = await factory.createToken(config, metadata, { value: deploymentFee });
+        const tx = await factory.createToken(config, metadata); // No value sent
         console.log("[DEPLOY-DEBUG] TX:", tx);
         const receipt = await tx.wait();
         console.log("[DEPLOY-DEBUG] Receipt:", receipt);
         let newTokenAddress = null;
+        // Get the TokenCreated event topic
+        const tokenCreatedTopic = factory.interface.getEventTopic("TokenCreated");
         for (const log of receipt.logs) {
-          try {
-            const parsed = factory.interface.parseLog(log);
-            if (parsed.name === "TokenCreated") {
-              newTokenAddress = parsed.args.tokenAddress;
-              break;
+          // Only parse logs from the factory contract and with the TokenCreated topic
+          if (
+            log.address.toLowerCase() === factoryAddress.toLowerCase() &&
+            log.topics[0] === tokenCreatedTopic
+          ) {
+            try {
+              const parsed = factory.interface.parseLog(log);
+              if (parsed.name === "TokenCreated") {
+                newTokenAddress = parsed.args.tokenAddress;
+                break;
+              }
+            } catch (parseErr) {
+              console.error("[DEPLOY-DEBUG] Error parsing TokenCreated log:", parseErr);
             }
-          } catch (parseErr) {
-            console.error("[DEPLOY-DEBUG] Error parsing log:", parseErr);
           }
         }
         console.log("[DEPLOY-DEBUG] New token address:", newTokenAddress);
@@ -336,12 +390,29 @@ const Deploy = () => {
           return;
         }
         toast.success("Token deployed successfully!");
+
+        // Trigger backend verification (fire-and-forget). Keep user flow snappy.
+        triggerVerification(newTokenAddress, initCalldata)
+          .then((resp) => {
+            console.log("[DEPLOY-DEBUG] verification request submitted", resp);
+            if (resp?.status === 202 || resp?.data?.status === 'verifying') {
+              toast.info("Verification started in background.");
+            } else if (resp?.data?.status === 'already_verified' || resp?.data?.status === 'verified') {
+              toast.success("Contract verified.");
+            } else {
+              toast.info("Verification request submitted.");
+            }
+          })
+          .catch((err) => {
+            console.warn("[DEPLOY-DEBUG] verification request error:", err);
+          });
+
         navigate("/result", {
           state: {
             deployment: {
               address: newTokenAddress,
               txHash: tx.hash,
-              fee: deploymentFee?.toString(),
+              fee: "0", // No deployment fee
             },
             formData: {
               ...formData,
@@ -882,6 +953,17 @@ const Deploy = () => {
                   {getTokenValue(formData.maxWalletPercent)} tokens)
                 </li>
                 <li>
+                  <span className="font-bold">Your BNB Balance:</span>{" "}
+                  <span className={insufficientFunds ? "text-red-400" : "text-green-400"}>
+                    {balance ? parseFloat(balance).toFixed(6) : "0.000000"} BNB
+                  </span>
+                  {insufficientFunds && (
+                    <span className="text-red-400 text-xs ml-2">
+                      (Minimum: 0.0003 BNB required)
+                    </span>
+                  )}
+                </li>
+                <li>
                   <span className="font-bold">Buy Fees:</span> Marketing{" "}
                   {formData.buyMarketingFee || 0}%, Dev{" "}
                   {formData.buyDevFee || 0}%, LP {formData.buyLpFee || 0}%
@@ -914,11 +996,14 @@ const Deploy = () => {
                   !!errors.totalBuyFee ||
                   !!errors.totalSellFee ||
                   !isConnected ||
-                  chainId !== 56
+                  chainId !== 56 ||
+                  insufficientFunds
                 }
                 className="w-full"
                 title={
-                  errors.totalFee
+                  insufficientFunds
+                    ? "Insufficient BNB balance. Minimum 0.0003 BNB required."
+                    : errors.totalFee
                     ? errors.totalFee
                     : errors.totalBuyFee
                     ? errors.totalBuyFee
@@ -929,7 +1014,11 @@ const Deploy = () => {
               >
                 {isDeploying ? "Deploying Token..." : "Deploy Token"}
               </Button>
-              {/* BNB balance warning removed to allow deployment with any balance */}
+              {insufficientFunds && (
+                <div className="mt-2 text-sm text-red-400 text-center">
+                  Insufficient BNB balance. You need at least 0.0003 BNB to deploy a token.
+                </div>
+              )}
             </motion.div>
           </form>
         </Card>

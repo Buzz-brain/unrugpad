@@ -13,6 +13,4 @@ docs/
 # Dotenv file
 .env
 
-old-smart-contract
-
-document.txt
+Note.txt
